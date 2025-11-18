@@ -258,7 +258,7 @@ impl<'a> Tokenizer<'a> {
                 if c == b'\n' { self.line += 1; }
                 if c == b'\\' {
                     if let Some(d) = self.peek(0) {
-                        if d == b'"' {
+                        if d == b'"' || d == b'\\' {
                             self.current += 1;
                             continue
                         }
