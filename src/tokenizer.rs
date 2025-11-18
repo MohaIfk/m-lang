@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::tokens::{TokenType, Token, get_keywork_hash_map};
 
 pub struct Tokenizer<'a> {
@@ -7,6 +8,7 @@ pub struct Tokenizer<'a> {
     line: usize,
     has_error: bool,
     source: &'a str,
+    keyword_hash_map: HashMap<&'static str, TokenType>
 }
 
 impl<'a> Tokenizer<'a> {
@@ -18,6 +20,7 @@ impl<'a> Tokenizer<'a> {
             line: 1,
             has_error: false,
             source,
+            keyword_hash_map: get_keywork_hash_map()
         }
     }
 
@@ -41,7 +44,21 @@ impl<'a> Tokenizer<'a> {
                 b'\n' => {
                     self.line += 1;
                     self.current += 1;
-                    continue
+                    continue;
+                }
+                b'/' => {
+                    if let Some(d) = self.peek(1) {
+                        if d == b'/' {
+                            while let Some(d) = self.peek(0) {
+                                self.current += 1;
+                                if d == b'\n' {
+                                    self.line += 1;
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -97,6 +114,30 @@ impl<'a> Tokenizer<'a> {
             },
             b'*' => Ok(self.craft_token(TokenType::Star)),
             b'/' => Ok(self.craft_token(TokenType::Slash)),
+            b'|' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        if d == b'|' {
+                            self.current += 1;
+                            return Ok(self.craft_token(TokenType::Or));
+                        }
+                        Ok(self.craft_token(TokenType::Pipe))
+                    }
+                    None => Ok(self.craft_token(TokenType::Pipe)),
+                }
+            },
+            b'&' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        if d == b'&' {
+                            self.current += 1;
+                            return Ok(self.craft_token(TokenType::And));
+                        }
+                        Ok(self.craft_token(TokenType::Ampersand))
+                    }
+                    None => Ok(self.craft_token(TokenType::Ampersand)),
+                }
+            },
 
             b'!' => {
                 match self.peek(0) {
@@ -168,7 +209,7 @@ impl<'a> Tokenizer<'a> {
 
     fn get_number(&mut self) -> Token {
         while let Some(c) = self.peek(0) {
-            if c >= b'0' && c <= b'9' {
+            if c.is_ascii_digit() {
                 self.current += 1;
             } else {
                 break
@@ -176,11 +217,13 @@ impl<'a> Tokenizer<'a> {
         }
 
         if let Some(c) = self.peek(0) {
-            if c == b'.' {
-                self.current += 1;
+            if let Some(d) = self.peek(1)  {
+                if c == b'.' && d.is_ascii_digit() { // we won't eat the dot if there is no digit ahead
+                    self.current += 1;
+                }
             }
             while let Some(c) = self.peek(0) {
-                if c >= b'0' && c <= b'9' {
+                if c.is_ascii_digit() {
                     self.current += 1;
                 } else {
                     break
@@ -201,8 +244,7 @@ impl<'a> Tokenizer<'a> {
         }
         let a = &self.source[self.start..self.current];
 
-        let khm = get_keywork_hash_map();
-        if let Some(k) = khm.get(a).cloned() {
+        if let Some(k) = self.keyword_hash_map.get(a).cloned() {
             return self.craft_token(k);
 
         }
@@ -213,6 +255,15 @@ impl<'a> Tokenizer<'a> {
         while let Some(c) = self.peek(0) {
             if c != b'"' {
                 self.current += 1;
+                if c == b'\n' { self.line += 1; }
+                if c == b'\\' {
+                    if let Some(d) = self.peek(0) {
+                        if d == b'"' {
+                            self.current += 1;
+                            continue
+                        }
+                    }
+                }
             } else {
                 break
             }

@@ -17,6 +17,10 @@ pub enum TokenType {
     Minus,          // -
     Star,           // * (Used for multiplication AND pointers)
     Slash,          // /
+    Pipe,           // |
+    Or,             // ||
+    Ampersand,      // &
+    And,            // &&
 
     Bang,           // !
     Equal,          // =
