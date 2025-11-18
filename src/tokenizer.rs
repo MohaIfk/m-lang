@@ -81,7 +81,7 @@ impl<'a> Tokenizer<'a> {
             return Ok(self.get_number());
         }
 
-        if c.is_ascii_alphabetic() {
+        if c.is_ascii_alphabetic() || c == b'_' {
             return Ok(self.get_keyword_or_identifier())
         }
 
@@ -97,7 +97,20 @@ impl<'a> Tokenizer<'a> {
             b'.' => Ok(self.craft_token(TokenType::Dot)),
             b':' => Ok(self.craft_token(TokenType::Colon)),
             b';' => Ok(self.craft_token(TokenType::Semicolon)),
-            b'+' => Ok(self.craft_token(TokenType::Plus)),
+            b'+' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        match d {
+                            b'=' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::PlusEqual))
+                            },
+                            _ => Ok(self.craft_token(TokenType::Plus)),
+                        }
+                    }
+                    None => Ok(self.craft_token(TokenType::Plus)),
+                }
+            },
             b'-' => {
                 match self.peek(0) {
                     Some(d) => {
@@ -106,20 +119,50 @@ impl<'a> Tokenizer<'a> {
                                 self.current += 1;
                                 Ok(self.craft_token(TokenType::Arrow))
                             },
+                            b'=' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::MinusEqual))
+                            },
                             _ => Ok(self.craft_token(TokenType::Minus)),
                         }
                     }
                     None => Ok(self.craft_token(TokenType::Minus)),
                 }
             },
-            b'*' => Ok(self.craft_token(TokenType::Star)),
-            b'/' => Ok(self.craft_token(TokenType::Slash)),
+            b'*' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        match d {
+                            b'=' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::StarEqual))
+                            },
+                            _ => Ok(self.craft_token(TokenType::Star)),
+                        }
+                    }
+                    None => Ok(self.craft_token(TokenType::Star)),
+                }
+            },
+            b'/' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        match d {
+                            b'=' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::SlashEqual))
+                            },
+                            _ => Ok(self.craft_token(TokenType::Slash)),
+                        }
+                    }
+                    None => Ok(self.craft_token(TokenType::Slash)),
+                }
+            },
             b'|' => {
                 match self.peek(0) {
                     Some(d) => {
                         if d == b'|' {
                             self.current += 1;
-                            return Ok(self.craft_token(TokenType::Or));
+                            return Ok(self.craft_token(TokenType::PipePipe));
                         }
                         Ok(self.craft_token(TokenType::Pipe))
                     }
@@ -131,14 +174,13 @@ impl<'a> Tokenizer<'a> {
                     Some(d) => {
                         if d == b'&' {
                             self.current += 1;
-                            return Ok(self.craft_token(TokenType::And));
+                            return Ok(self.craft_token(TokenType::AmpersandAmpersand));
                         }
                         Ok(self.craft_token(TokenType::Ampersand))
                     }
                     None => Ok(self.craft_token(TokenType::Ampersand)),
                 }
             },
-
             b'!' => {
                 match self.peek(0) {
                     Some(d) => {
@@ -174,7 +216,11 @@ impl<'a> Tokenizer<'a> {
                             b'=' => {
                                 self.current += 1;
                                 Ok(self.craft_token(TokenType::LessEqual))
-                            },
+                            }
+                            b'<' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::LessLess))
+                            }
                             _ => Ok(self.craft_token(TokenType::Less)),
                         }
                     }
@@ -188,17 +234,37 @@ impl<'a> Tokenizer<'a> {
                             b'=' => {
                                 self.current += 1;
                                 Ok(self.craft_token(TokenType::GreaterEqual))
-                            },
+                            }
+                            b'>' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::GreaterGreater))
+                            }
                             _ => Ok(self.craft_token(TokenType::Greater)),
                         }
                     }
                     None => Ok(self.craft_token(TokenType::Greater)),
                 }
             },
+            b'%' => {
+                match self.peek(0) {
+                    Some(d) => {
+                        match d {
+                            b'=' => {
+                                self.current += 1;
+                                Ok(self.craft_token(TokenType::PercentEqual))
+                            },
+                            _ => Ok(self.craft_token(TokenType::Percent)),
+                        }
+                    }
+                    None => Ok(self.craft_token(TokenType::Percent)),
+                }
+            },
+            b'^' => Ok(self.craft_token(TokenType::Caret)),
+            b'~' => Ok(self.craft_token(TokenType::Tilde)),
             b'"' => self.get_string(),
             _ => {
                 self.has_error = true;
-                Err(format!("unexpected character {:?}", c as char))
+                Err(format!("unexpected character {:?} at line {}", c as char, self.line))
             }
         }
     }

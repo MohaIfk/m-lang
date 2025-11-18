@@ -18,10 +18,16 @@ pub enum TokenType {
     Star,           // * (Used for multiplication AND pointers)
     Slash,          // /
     Pipe,           // |
-    Or,             // ||
-    Ampersand,      // &
-    And,            // &&
+    PipePipe,       // ||
+    Ampersand,      // & (Bitwise AND / Address-of)
+    AmpersandAmpersand,// &&
 
+    Percent,        // %  (Modulo)
+    Caret,          // ^  (Bitwise XOR)
+    Tilde,          // ~  (Bitwise NOT)
+    LessLess,       // << (Bitwise Left Shift)
+    GreaterGreater, // >> (Bitwise Right Shift)
+    
     Bang,           // !
     Equal,          // =
     EqualEqual,     // ==
@@ -32,12 +38,20 @@ pub enum TokenType {
     GreaterEqual,   // >=
     Arrow,          // -> (Function return type)
 
+    PlusEqual,     // +=
+    MinusEqual,    // -=
+    StarEqual,     // *=
+    SlashEqual,    // /=
+    PercentEqual,  // %=
+
     Identifier,     // my_var, User, Arena
     Number,         // 123, 3.14
     String,         // "hello world"
 
     Fn, Struct, Enum, Import,
     Let, Var,
+
+    Option, Const, Void,
 
     If, ElseIf, Else,
     Match, Return, Jump,
@@ -74,6 +88,10 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
         ("import",   TokenType::Import),
         ("let",      TokenType::Let),      // Immutable variable
         ("var",      TokenType::Var),      // Mutable variable
+
+        ("option",       TokenType::Option),
+        ("const",       TokenType::Const),
+        ("void",       TokenType::Void),
 
         ("if",       TokenType::If),
         ("elif",     TokenType::ElseIf),
