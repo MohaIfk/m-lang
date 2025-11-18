@@ -32,6 +32,16 @@ impl<'a> Tokenizer<'a> {
         self.source.as_bytes().get(self.current + index).cloned()
     }
 
+    fn matches(&mut self, expected: u8) -> Option<u8> {
+        if let Some(c) = self.source.as_bytes().get(self.current).cloned() {
+            if c == expected {
+                self.current += 1;
+                return Some(c);
+            }
+        }
+        None
+    }
+
     pub fn generate_tokens(&mut self) -> Result<(), String> {
         while let Some(c) = self.peek(0) {
             self.start = self.current;
@@ -98,165 +108,86 @@ impl<'a> Tokenizer<'a> {
             b':' => Ok(self.craft_token(TokenType::Colon)),
             b';' => Ok(self.craft_token(TokenType::Semicolon)),
             b'+' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::PlusEqual))
-                            },
-                            _ => Ok(self.craft_token(TokenType::Plus)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Plus)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::PlusEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Plus))
                 }
             },
             b'-' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'>' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::Arrow))
-                            },
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::MinusEqual))
-                            },
-                            _ => Ok(self.craft_token(TokenType::Minus)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Minus)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::MinusEqual))
+                } else if let Some(_) = self.matches(b'>') {
+                    Ok(self.craft_token(TokenType::Arrow))
+                } else {
+                    Ok(self.craft_token(TokenType::Minus))
                 }
             },
             b'*' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::StarEqual))
-                            },
-                            _ => Ok(self.craft_token(TokenType::Star)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Star)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::StarEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Star))
                 }
             },
             b'/' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::SlashEqual))
-                            },
-                            _ => Ok(self.craft_token(TokenType::Slash)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Slash)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::SlashEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Slash))
                 }
             },
             b'|' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        if d == b'|' {
-                            self.current += 1;
-                            return Ok(self.craft_token(TokenType::PipePipe));
-                        }
-                        Ok(self.craft_token(TokenType::Pipe))
-                    }
-                    None => Ok(self.craft_token(TokenType::Pipe)),
+                if let Some(_) = self.matches(b'|') {
+                    Ok(self.craft_token(TokenType::PipePipe))
+                } else {
+                    Ok(self.craft_token(TokenType::Pipe))
                 }
             },
             b'&' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        if d == b'&' {
-                            self.current += 1;
-                            return Ok(self.craft_token(TokenType::AmpersandAmpersand));
-                        }
-                        Ok(self.craft_token(TokenType::Ampersand))
-                    }
-                    None => Ok(self.craft_token(TokenType::Ampersand)),
+                if let Some(_) = self.matches(b'&') {
+                    Ok(self.craft_token(TokenType::AmpersandAmpersand))
+                } else {
+                    Ok(self.craft_token(TokenType::Ampersand))
                 }
             },
             b'!' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::BangEqual))
-                            }
-                            _ => Ok(self.craft_token(TokenType::Bang))
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Bang))
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::BangEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Bang))
                 }
             },
             b'=' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::EqualEqual))
-                            }
-                            _ => Ok(self.craft_token(TokenType::Equal))
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Equal))
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::EqualEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Equal))
                 }
             },
             b'<' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::LessEqual))
-                            }
-                            b'<' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::LessLess))
-                            }
-                            _ => Ok(self.craft_token(TokenType::Less)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Less)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::LessEqual))
+                } else if let Some(_) = self.matches(b'<') {
+                    Ok(self.craft_token(TokenType::LessLess))
+                } else {
+                    Ok(self.craft_token(TokenType::Less))
                 }
             },
             b'>' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::GreaterEqual))
-                            }
-                            b'>' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::GreaterGreater))
-                            }
-                            _ => Ok(self.craft_token(TokenType::Greater)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Greater)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::GreaterEqual))
+                } else if let Some(_) = self.matches(b'>') {
+                    Ok(self.craft_token(TokenType::GreaterGreater))
+                } else {
+                    Ok(self.craft_token(TokenType::Greater))
                 }
             },
             b'%' => {
-                match self.peek(0) {
-                    Some(d) => {
-                        match d {
-                            b'=' => {
-                                self.current += 1;
-                                Ok(self.craft_token(TokenType::PercentEqual))
-                            },
-                            _ => Ok(self.craft_token(TokenType::Percent)),
-                        }
-                    }
-                    None => Ok(self.craft_token(TokenType::Percent)),
+                if let Some(_) = self.matches(b'=') {
+                    Ok(self.craft_token(TokenType::PercentEqual))
+                } else {
+                    Ok(self.craft_token(TokenType::Percent))
                 }
             },
             b'^' => Ok(self.craft_token(TokenType::Caret)),
