@@ -5,7 +5,7 @@ pub struct Tokenizer<'a> {
     tokens: Vec<Token>,
     current: usize,
     start: usize,
-    line: usize,
+    pub line: usize,
     has_error: bool,
     source: &'a str,
     keyword_hash_map: HashMap<&'static str, TokenType>
@@ -81,7 +81,7 @@ impl<'a> Tokenizer<'a> {
                 self.tokens.push(a?);
             }
         }
-        self.tokens.push(Token::new(TokenType::EOF, "".to_string()));
+        self.tokens.push(Token::new(TokenType::EOF, "".to_string(), self.line));
         Ok(())
     }
 
@@ -201,7 +201,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn craft_token(&mut self, token_type: TokenType) -> Token {
-        Token::new(token_type, self.source[self.start..self.current].to_string())
+        Token::new(token_type, self.source[self.start..self.current].to_string(), self.line)
     }
 
     fn get_number(&mut self) -> Token {
@@ -273,6 +273,6 @@ impl<'a> Tokenizer<'a> {
             return Err("String must end with '\"'".to_string());
         }
         self.current += 1;
-        Ok(Token::new(TokenType::String, self.source[self.start+1..self.current-1].to_string()))
+        Ok(Token::new(TokenType::String, self.source[self.start+1..self.current-1].to_string(), self.line))
     }
 }

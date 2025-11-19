@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
     // Single-Character Tokens
     LeftParen,      // (
@@ -72,11 +72,12 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
+    pub line: usize
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, literal: String) -> Self {
-        Token { token_type, literal }
+    pub fn new(token_type: TokenType, literal: String, line: usize) -> Self {
+        Token { token_type, literal, line }
     }
 }
 

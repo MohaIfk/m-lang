@@ -1,10 +1,13 @@
 mod tokens;
 mod tokenizer;
+mod parser;
+mod ast;
 
 use std::env;
 use std::process::exit;
 use std::fs::File;
 use std::io::prelude::*;
+use crate::parser::Parser;
 use crate::tokenizer::Tokenizer;
 
 fn main() {
@@ -36,8 +39,16 @@ fn main() {
         println!("Error: {}", r.err().unwrap());
         exit(1);
     }
+    println!("TOKENS: ==================================");
     for a in tokenizer.get_tokens() {
         println!("token {:?}: {:?}", a.token_type, a.literal);
     }
-    println!("Hello, world!");
+    let mut parser = Parser::new(tokenizer.get_tokens().clone()); // TODO: no need to clone
+    let b = parser.parse_program();
+    println!("AST: ==================================");
+    if b.is_ok() {
+        print!("{:?}", b.unwrap());
+    } else {
+        print!("{:?}", b.err())
+    }
 }
