@@ -1,7 +1,5 @@
-use std::cmp::PartialEq;
-use std::ptr::null;
 use crate::tokens::{Token, TokenType};
-use crate::ast::{Ast, Type};
+use crate::ast::{Ast};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -17,7 +15,8 @@ pub struct ParseError {
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
         Parser {
-            tokens, current: 0
+            tokens,
+            current: 0
         }
     }
 
@@ -67,148 +66,157 @@ impl Parser {
         }
         None
     }
+    fn m_matches(&mut self, t: Vec<TokenType>) -> Option<&Token> {
+        if let Some(_t) = self.tokens.get(self.current) {
+            for tt in t {
+                if _t.token_type == tt {
+                    self.current += 1;
+                    return Some(_t);
+                }
+            }
+        }
+        None
+    }
 
+    // Program Structure
     pub fn parse_program(&mut self) -> Result<Ast, ParseError> {
-        let mut declarations: Vec<Box<Ast>> = Vec::new();
+        let mut top_levels: Vec<Box<Ast>> = vec![];
         while let Some(t) = self.tokens.get(self.current) {
             let a = match t.token_type {
                 TokenType::EOF => break,
-                _ => self.parse_declaration(t.clone())
-            };
-            declarations.push(Box::new(a?));
+                _ => self.parse_top_level(t.clone())
+            }?;
+            top_levels.push(Box::new(a));
         }
         self.consume(TokenType::EOF, "program didn't end with EOF".to_string())?;
         Ok(Ast::Program {
-            declarations,
+            top_levels,
         })
     }
-    fn parse_declaration(&mut self, t:Token) -> Result<Ast, ParseError> {
+
+    pub fn parse_top_level(&mut self, t: Token) -> Result<Ast, ParseError> {
+        let mut attr: Ast = Ast::None;
+        let mut decl: Ast = Ast::None;
+        if t.token_type == TokenType::At {
+            self.advance();
+            let name = self.consume(TokenType::Identifier, "expected Identifier after '@'".to_string())?.literal;
+            let mut args: Vec<Box<Ast>> = vec![];
+            if let Some(_) = self.matches(TokenType::LeftParen) {
+                args = self.parse_arg_list()?;
+                self.consume(TokenType::RightParen, "expected ')'".to_string())?;
+            }
+            attr = Ast::Attributes {
+                name,
+                args
+            }
+        }
         match t.token_type {
-            //TokenType::Fn => self.parse_fn_declaration(),
-            TokenType::Struct => self.parse_struct_declaration(),
-            TokenType::Enum => self.parse_enum_declaration(),
-            TokenType::Import => self.parse_import_statement(),
-            _ => Err(ParseError {
-                message: String::from("Declaration start with import, fn, enum, struct."),
-                line: t.line
+            _ => {}
+        }
+        Ok(Ast::TopLevel {
+            attributes: Box::new(attr),
+            declaration: Box::new(decl)
+        })
+    }
+
+    // Expressions
+    fn parse_expression(&mut self) -> Result<Box<Ast>, ParseError> {
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Box<Ast>, ParseError> {
+        let mut expr = self.parse_logical_and()?;
+        while let Some(t) = self.matches(TokenType::PipePipe).cloned() {
+            let rhs = self.parse_logical_and()?;
+            expr = Box::new(Ast::Binary {
+                lhs: expr,
+                op: t,
+                rhs
             })
         }
+        Ok(expr)
     }
-    // i do what i do in declaration inside the program
-    //fn parse_fn_declaration(&mut self) -> Ast {}
-    fn parse_struct_declaration(&mut self) -> Result<Ast, ParseError> {
-        self.consume(TokenType::Struct, "This must be a bug in the parser".to_string())?;
-        let name = self.consume(TokenType::Identifier, "A string must be provided after struct".to_string())?.literal;
-        let mut field_declarations: Vec<Box<Ast>> = Vec::new();
-        self.consume(TokenType::LeftBrace, "we need {".to_string())?;
-        while let Some(t) = self.peek(0) {
-            if t.token_type == TokenType::RightBrace {
-                break;
-            }
-            field_declarations.push(Box::new(self.parse_field_declaration()?));
+
+    fn parse_logical_and(&mut self) -> Result<Box<Ast>, ParseError> {
+        let mut expr = self.parse_equality()?;
+        while let Some(t) = self.matches(TokenType::AmpersandAmpersand).cloned() {
+            let rhs = self.parse_equality()?;
+            expr = Box::new(Ast::Binary {
+                lhs: expr,
+                op: t,
+                rhs
+            })
         }
-        self.consume(TokenType::RightBrace, "we need }".to_string())?;
-        Ok(Ast::StructDeclaration{
-            name,
-            field_declarations
-        })
+        Ok(expr)
     }
 
-    fn parse_field_declaration(&mut self) -> Result<Ast, ParseError> {
-        let name = self.consume(TokenType::Identifier, "A string must be provided after struct".to_string())?.literal;
-        self.consume(TokenType::Colon, "we need : after a field name".to_string())?;
-        let _type = self.parse_type()?;
-        self.consume(TokenType::Semicolon, "we need ; after a field type".to_string())?;
-        Ok(Ast::FieldDeclaration {
-            name,
-            type_: Box::new(_type),
-        })
-    }
-
-    fn parse_type(&mut self) -> Result<Ast, ParseError> {
-        if let Some(t) = self.tokens.get(self.current) {
-            self.current += 1;
-
-            match t.token_type {
-                TokenType::Option => {
-                    self.consume(TokenType::Less, "we need < after option".to_string())?;
-                    let type_ = self.parse_type()?;
-                    self.consume(TokenType::Greater, "we need > after option".to_string())?;
-                    Ok(Ast::OptionType { type_: Box::new(type_) })
-                },
-                TokenType::Star => {
-                    let type_ = self.parse_type()?;
-                    Ok(Ast::PointerType { type_: Box::new(type_) })
-                }
-                TokenType::Identifier => {
-                    Ok(Ast::UserDefinedType { name: t.literal.clone() })
-                },
-                _ => self.parse_primitive_type(t.clone())
-            }
-        } else {
-            Err(ParseError{message: String::from("Unexpected EOF"), line: 0})
+    fn parse_equality(&mut self) -> Result<Box<Ast>, ParseError> {
+        let mut expr = self.parse_comparison()?;
+        while let Some(t) = self.m_matches(vec![TokenType::EqualEqual, TokenType::BangEqual]).cloned() {
+            let rhs = self.parse_comparison()?;
+            expr = Box::new(Ast::Binary {
+                lhs: expr,
+                op: t,
+                rhs
+            })
         }
+        Ok(expr)
     }
 
-    fn parse_primitive_type(&mut self, t:Token) -> Result<Ast, ParseError> {
-         match t.token_type {
-            TokenType::CHAR => Ok(Ast::PrimitiveType { type_: Type::CHAR }),
-            TokenType::U8 => Ok(Ast::PrimitiveType { type_: Type::U8 }),
-            TokenType::U16 => Ok(Ast::PrimitiveType { type_: Type::U16 }),
-            TokenType::U32 => Ok(Ast::PrimitiveType { type_: Type::U32 }),
-            TokenType::U64 => Ok(Ast::PrimitiveType { type_: Type::U64 }),
-            TokenType::I8 => Ok(Ast::PrimitiveType { type_: Type::I8 }),
-            TokenType::I16 => Ok(Ast::PrimitiveType { type_: Type::I16 }),
-            TokenType::I32 => Ok(Ast::PrimitiveType { type_: Type::I32 }),
-            TokenType::I64 => Ok(Ast::PrimitiveType { type_: Type::I64 }),
-            TokenType::F32 => Ok(Ast::PrimitiveType { type_: Type::F32 }),
-            TokenType::F64 => Ok(Ast::PrimitiveType { type_: Type::F64 }),
-            TokenType::BOOL => Ok(Ast::PrimitiveType { type_: Type::BOOL }),
-            _ => Err(ParseError{message: String::from("Primitive type is not a primitive type"), line: t.line})
-        }
+    fn parse_comparison(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
     }
 
-    fn parse_enum_declaration(&mut self) -> Result<Ast, ParseError> {
-        self.consume(TokenType::Enum, "This must be a bug in the parser".to_string())?;
-        let name = self.consume(TokenType::Identifier, "A string must be provided after enum".to_string())?.literal;
-        self.consume(TokenType::LeftBrace, "we need { after a enum name".to_string())?;
-        let mut enum_cases: Vec<Box<Ast>> = Vec::new();
-        while let Some(t) = self.peek(0) {
-            if t.token_type == TokenType::RightBrace {
-                break;
-            }
-            enum_cases.push(Box::new(self.parse_enum_case()?));
-        }
-        self.consume(TokenType::RightBrace, "we need }".to_string())?;
-        Ok(Ast::EnumDeclaration {
-            name,
-            enum_cases
-        })
+    fn parse_bitwise_or(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
     }
 
-    fn parse_enum_case(&mut self) -> Result<Ast, ParseError> {
-        let name = self.consume(TokenType::Identifier, "A string must be provided after enum".to_string())?.literal;
-        let mut member_types: Vec<Box<Ast>> = Vec::new();
-        if let Some(_) = self.matches(TokenType::LeftParen) {
-            member_types.push(Box::new(self.parse_type()?));
-            while let Some(_) = self.matches(TokenType::Comma) {
-                member_types.push(Box::new(self.parse_type()?));
-            }
-            self.consume(TokenType::RightParen, "we need )".to_string())?;
-        }
-        self.consume(TokenType::Semicolon, "we need ;".to_string())?;
-        Ok(Ast::EnumCase {
-            name,
-            types_: member_types
-        })
+    fn parse_bitwise_xor(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
     }
 
-    fn parse_import_statement(&mut self) -> Result<Ast, ParseError> {
-        self.consume(TokenType::Import, "This must be a bug in the parser".to_string())?;
-        let import_str = self.consume(TokenType::String, "A string must be provided after import".to_string())?.literal;
-        self.consume(TokenType::Semicolon, "import statement must end with Semicolon".to_string())?;
-        Ok(Ast::ImportStatement {
-            name: import_str,
-        })
+    fn parse_bitwise_and(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_shift(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_term(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_factor(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_cast(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_unary(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_postfix(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_postfix_op(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_primary(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_struct_init(&mut self) -> Result<Box<Ast>, ParseError> {
+        todo!()
+    }
+
+    fn parse_arg_list(&mut self) -> Result<Vec<Box<Ast>>, ParseError> {
+        let mut args: Vec<Box<Ast>> = vec![];
+        Ok(args)
     }
 }

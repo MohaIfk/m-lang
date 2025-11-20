@@ -67,6 +67,20 @@ impl<'a> Tokenizer<'a> {
                                 }
                             }
                             continue;
+                        } else if d == b'*' {
+                            while let Some(d) = self.peek(0) {
+                                self.current += 1;
+                                if d == b'\n' {
+                                    self.line += 1;
+                                }
+                                if d == b'*' {
+                                    if let Some(_) = self.matches(b'/') {
+                                        self.current += 1;
+                                        break;
+                                    }
+                                }
+                            }
+                            continue;
                         }
                     }
                 }
@@ -103,6 +117,7 @@ impl<'a> Tokenizer<'a> {
             b'}' => Ok(self.craft_token(TokenType::RightBrace)),
             b'[' => Ok(self.craft_token(TokenType::LeftBracket)),
             b']' => Ok(self.craft_token(TokenType::RightBracket)),
+            b'@' => Ok(self.craft_token(TokenType::At)),
             b',' => Ok(self.craft_token(TokenType::Comma)),
             b'.' => Ok(self.craft_token(TokenType::Dot)),
             b':' => Ok(self.craft_token(TokenType::Colon)),
@@ -193,6 +208,7 @@ impl<'a> Tokenizer<'a> {
             b'^' => Ok(self.craft_token(TokenType::Caret)),
             b'~' => Ok(self.craft_token(TokenType::Tilde)),
             b'"' => self.get_string(),
+            b'\'' => self.get_char(),
             _ => {
                 self.has_error = true;
                 Err(format!("unexpected character {:?} at line {}", c as char, self.line))
@@ -274,5 +290,20 @@ impl<'a> Tokenizer<'a> {
         }
         self.current += 1;
         Ok(Token::new(TokenType::String, self.source[self.start+1..self.current-1].to_string(), self.line))
+    }
+
+    fn get_char(&mut self) -> Result<Token, String> {
+        if let Some(_) = self.peek(0) {
+            self.current += 1;
+            if let Some(a) = self.peek(0) {
+                self.current += 1;
+                if a != b'\'' {
+                    return Err(format!("Char must end with \"'\" found {}", a as char));
+                }
+            }
+            Ok(Token::new(TokenType::Char, self.source[self.start+1..self.current-1].to_string(), self.line))
+        } else {
+            Err("Unexpected EOF".to_string())
+        }
     }
 }

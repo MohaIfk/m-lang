@@ -9,6 +9,7 @@ pub enum TokenType {
     RightBrace,     // }
     LeftBracket,    // [
     RightBracket,   // ]
+    At,             // @
     Comma,          // ,
     Dot,            // .
     Colon,          // :
@@ -47,20 +48,22 @@ pub enum TokenType {
     Identifier,     // my_var, User, Arena
     Number,         // 123, 3.14
     String,         // "hello world"
+    Char,           // 'c'
 
     Fn, Struct, Enum, Import,
-    Let, Var,
+    Let, Var, Extern,
 
     Option, Const, Void,
 
     If, ElseIf, Else,
     Match, Return, Jump,
+    While, For, Break, Continue,
 
     Arena,          // The type for memory allocators
     Unsafe,         // The keyword for 'unsafe' blocks
     As,             // For type casting: 'foo as *u8'
 
-    True, False,
+    True, False, Null,
     F32, F64, BOOL, CHAR, // Primitive types
     I8, I16, I32, I64,
     U8, U16, U32, U64,
@@ -68,7 +71,7 @@ pub enum TokenType {
     EOF // End of File
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
@@ -89,6 +92,7 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
         ("import",   TokenType::Import),
         ("let",      TokenType::Let),      // Immutable variable
         ("var",      TokenType::Var),      // Mutable variable
+        ("extern",   TokenType::Extern),
 
         ("option",       TokenType::Option),
         ("const",       TokenType::Const),
@@ -100,6 +104,10 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
         ("match",    TokenType::Match),
         ("return",   TokenType::Return),
         ("jmp",   TokenType::Jump),
+        ("while",    TokenType::While),
+        ("for",      TokenType::For),
+        ("break",     TokenType::Break),
+        ("continue",   TokenType::Continue),
 
         ("Arena",    TokenType::Arena),
         ("unsafe",   TokenType::Unsafe),
@@ -107,6 +115,7 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
 
         ("true",     TokenType::True),
         ("false",    TokenType::False),
+        ("null",     TokenType::Null),
         ("i8",       TokenType::I8),
         ("i16",      TokenType::I16),
         ("i32",      TokenType::I32),
