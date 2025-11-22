@@ -58,6 +58,7 @@ pub enum TokenType {
     If, ElseIf, Else,
     Match, Return, Jump,
     While, For, Break, Continue,
+    SizeOf,
 
     Arena,          // The type for memory allocators
     Unsafe,         // The keyword for 'unsafe' blocks
@@ -103,11 +104,12 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
         ("else",     TokenType::Else),
         ("match",    TokenType::Match),
         ("return",   TokenType::Return),
-        ("jmp",   TokenType::Jump),
+        ("jmp",      TokenType::Jump),
         ("while",    TokenType::While),
         ("for",      TokenType::For),
-        ("break",     TokenType::Break),
-        ("continue",   TokenType::Continue),
+        ("break",    TokenType::Break),
+        ("continue", TokenType::Continue),
+        ("sizeof",   TokenType::SizeOf),
 
         ("Arena",    TokenType::Arena),
         ("unsafe",   TokenType::Unsafe),
