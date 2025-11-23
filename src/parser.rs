@@ -113,6 +113,10 @@ impl Parser {
                     self.parse_import_decl()?
                 },
                 TokenType::Extern => self.parse_extern(attributes)?,
+                TokenType::Fn => self.parse_fn_decl(attributes)?,
+                TokenType::Struct => self.parse_struct_decl(attributes)?,
+                TokenType::Enum => self.parse_enum_decl(attributes)?,
+                TokenType::Const | TokenType::Var => self.parse_global_decl(attributes)?,
                 _ => return Err(ParseError {
                     message: format!("Expected top-level declaration, found {:?}", t.token_type),
                     line: t.line
@@ -236,8 +240,29 @@ impl Parser {
 
     // Declarations
 
-    fn parse_fn_decl(&mut self) -> Result<Item, ParseError> {
-        todo!()
+    fn parse_fn_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+        self.consume(TokenType::Fn, "Expected function declaration")?;
+        let name = self.consume(TokenType::Identifier, "need identifier after fn")?.literal;
+        self.consume(TokenType::LeftParen, "expected '('")?;
+        let mut params = vec![];
+        if let Some(tt) = self.peek_type() {
+            if tt != TokenType::RightParen {
+                params = self.parse_param_list()?;
+            }
+        }
+        self.consume(TokenType::RightParen, "expected ')'")?;
+        let mut return_type = Type::Void;
+        if let Some(_) = self.matches(TokenType::Arrow) {
+            return_type = self.parse_type()?;
+        }
+        let body = self.parse_block()?;
+        Ok(Item::Function(FnDecl {
+            attributes,
+            name,
+            params,
+            return_type,
+            body: Box::new(body),
+        }))
     }
 
     fn parse_param_list(&mut self) -> Result<Vec<(String, Type)>, ParseError> {
@@ -254,6 +279,100 @@ impl Parser {
         self.consume(TokenType::Colon, "Expected :")?;
         let ty = self.parse_type()?;
         Ok((name, ty))
+    }
+
+    fn parse_struct_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+        self.consume(TokenType::Struct, "Expected struct declaration")?;
+        let name = self.consume(TokenType::Identifier, "need identifier after struct")?.literal;
+        self.consume(TokenType::LeftBrace, "Expected {")?;
+        let mut fields: Vec<(String, Type)> = vec![];
+        while let None = self.matches(TokenType::RightBrace) {
+            fields.push(self.parse_struct_field()?);
+        }
+        Ok(Item::Struct(StructDecl {
+            attributes,
+            name,
+            fields,
+        }))
+    }
+
+    fn parse_struct_field(&mut self) -> Result<(String, Type), ParseError> {
+        let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
+        self.consume(TokenType::Colon, "Expected :")?;
+        let ty = self.parse_type()?;
+        self.consume(TokenType::Semicolon, "Expected ;")?;
+        Ok((name, ty))
+    }
+
+    fn parse_enum_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+        self.consume(TokenType::Enum, "Expected enum declaration")?;
+        let name = self.consume(TokenType::Identifier, "need identifier after enum")?.literal;
+        self.consume(TokenType::LeftBrace, "Expected {")?;
+        let mut variants: Vec<(String, Option<ExprNode>)> = vec![];
+        variants.push(self.parse_enum_item()?);
+        while let Some(_) = self.matches(TokenType::Comma) {
+            if let Some(tt) = self.peek_type() {
+               if tt == TokenType::RightBrace { break };
+            }
+            variants.push(self.parse_enum_item()?);
+        }
+        self.consume(TokenType::RightBrace, "Expected }")?;
+        Ok(Item::Enum(EnumDecl {
+            attributes,
+            name,
+            variants,
+        }))
+    }
+
+    fn parse_enum_item(&mut self) -> Result<(String, Option<ExprNode>), ParseError> {
+        let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
+        let mut expr: Option<ExprNode> = None;
+        if let Some(_) = self.matches(TokenType::Equal) {
+            expr = Some(self.parse_expression()?);
+        }
+        Ok((name, expr))
+    }
+
+    fn parse_global_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+        let mut is_const: bool = false;
+        if let Some(t) = self.peek(0) {
+            is_const = match t.token_type {
+                TokenType::Const => true,
+                TokenType::Var => true,
+                _ => {
+                    return Err(ParseError {
+                        message: "Bug".to_string(),
+                        line: t.line,
+                    });
+                },
+            }
+        } else {
+            return Err(ParseError {
+                message: "Bug".to_string(),
+                line: 0,
+            });
+        }
+        self.current += 1; // const|var
+        let name = self.consume(TokenType::Identifier, "need identifier after global declaration")?.literal;
+        self.consume(TokenType::Colon, "Expected :")?;
+        let ty = self.parse_type()?;
+        let mut init: Option<ExprNode> = None;
+        if let Some(_) = self.matches(TokenType::Equal) {
+            init = Some(self.parse_expression()?);
+        }
+        self.consume(TokenType::Semicolon, "Expected ;")?;
+        Ok(Item::Global(GlobalDecl {
+            attributes,
+            name,
+            ty,
+            init,
+            is_const,
+        }))
+    }
+
+    // Statements
+    fn parse_block(&mut self) -> Result<StmtNode, ParseError> {
+        Ok(StmtNode::new(Stmt::Block(vec![])))
     }
 
     // Expressions

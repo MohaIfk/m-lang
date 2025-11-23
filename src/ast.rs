@@ -120,14 +120,14 @@ pub struct Attribute {
 #[derive(Debug)]
 pub struct StructDecl {
     pub attributes: Vec<Attribute>,
-    pub node: String,
+    pub name: String,
     pub fields: Vec<(String, Type)>
 }
 
 #[derive(Debug)]
 pub struct EnumDecl {
     pub attributes: Vec<Attribute>,
-    pub node: String,
+    pub name: String,
     pub variants: Vec<(String, Option<ExprNode>)>,
 }
 
