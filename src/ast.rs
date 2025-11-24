@@ -83,7 +83,7 @@ pub enum Stmt {
     Block(Vec<StmtNode>),
 
     // let x: i32 = 5;
-    VarDecl{ is_mutable: bool, name: String, ty: Type, int: Option<ExprNode> },
+    VarDecl{ is_mutable: bool, name: String, ty: Type, init: Option<ExprNode> },
 
     // x = 5;
     Assign{ target: ExprNode, value: ExprNode },

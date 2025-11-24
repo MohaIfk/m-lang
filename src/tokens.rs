@@ -46,7 +46,8 @@ pub enum TokenType {
     PercentEqual,  // %=
 
     Identifier,     // my_var, User, Arena
-    Number,         // 123, 3.14
+    Int,            // 123
+    Float,          // 3.14
     String,         // "hello world"
     Char,           // 'c'
 

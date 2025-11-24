@@ -221,6 +221,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn get_number(&mut self) -> Token {
+        let mut is_float: bool = false;
         while let Some(c) = self.peek(0) {
             if c.is_ascii_digit() {
                 self.current += 1;
@@ -232,6 +233,7 @@ impl<'a> Tokenizer<'a> {
         if let Some(c) = self.peek(0) {
             if let Some(d) = self.peek(1)  {
                 if c == b'.' && d.is_ascii_digit() { // we won't eat the dot if there is no digit ahead
+                    is_float = true;
                     self.current += 1;
                 }
             }
@@ -244,7 +246,7 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        self.craft_token(TokenType::Number)
+        self.craft_token(if is_float { TokenType::Float } else { TokenType::Int })
     }
 
     fn get_keyword_or_identifier(&mut self) -> Token {
