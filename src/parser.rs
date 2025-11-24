@@ -387,6 +387,7 @@ impl Parser {
                 TokenType::Let | TokenType::Var => self.parse_var_decl_stmt(),
                 TokenType::If => self.parse_if_stmt(),
                 TokenType::While => self.parse_while_stmt(),
+                TokenType::For => self.parse_for_stmt(),
                 TokenType::Return => self.parse_return_stmt(),
                 TokenType::Break => {
                     self.current += 1;
@@ -517,6 +518,50 @@ impl Parser {
         Ok(StmtNode::new(Stmt::While {
             condition,
             body
+        }))
+    }
+
+    fn parse_for_stmt(&mut self) -> Result<StmtNode, ParseError> {
+        self.consume(TokenType::For, "Expected 'for' keyword")?;
+        self.consume(TokenType::LeftParen, "Expected '(' after 'for'")?;
+        let init: Option<Box<StmtNode>> = if self.matches(TokenType::Semicolon).is_none() {
+            let init_stmt = match self.peek_type() {
+                Some(TokenType::Let) | Some(TokenType::Var) => {
+                    self.parse_var_decl_stmt()?
+                }
+                _ => {
+                    self.parse_assignment_stmt()?
+                }
+            };
+            Some(Box::new(init_stmt))
+        } else {
+            None
+        };
+
+        let condition: Option<ExprNode> = if self.matches(TokenType::Semicolon).is_none() {
+            let expr = self.parse_expression()?;
+            self.consume(TokenType::Semicolon, "Expected ';' after loop condition")?;
+            Some(expr)
+        } else {
+            None
+        };
+
+        let update: Option<Box<StmtNode>> = if self.matches(TokenType::RightParen).is_none() {
+            let stmt = self.parse_assignment_clause()?;
+            self.consume(TokenType::RightParen, "Expected ')' after loop increment")?;
+            Some(Box::new(stmt))
+        } else {
+            None
+        };
+
+        // 4. Body: block
+        let body = self.parse_block()?;
+
+        Ok(StmtNode::new(Stmt::For {
+            init,
+            condition,
+            update,
+            body: Box::new(body),
         }))
     }
 

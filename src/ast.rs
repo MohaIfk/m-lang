@@ -1,5 +1,3 @@
-use crate::tokens::Token;
-
 #[derive(Clone, Debug)]
 pub struct Span {
     pub start: usize,
@@ -92,7 +90,7 @@ pub enum Stmt {
 
     While { condition: ExprNode, body: Box<StmtNode> },
 
-    For { init: Box<StmtNode>, condition: Option<ExprNode>, update: Option<Box<StmtNode>>, body: Box<StmtNode> },
+    For { init: Option<Box<StmtNode>>, condition: Option<ExprNode>, update: Option<Box<StmtNode>>, body: Box<StmtNode> },
 
     Return(Option<ExprNode>),
     Break,
@@ -175,11 +173,4 @@ pub struct Program {
     // pub span: Span,
 }
 
-#[derive(Debug)]
-pub enum Ast {
-    Program { top_levels: Vec<Box<Ast>> },
-    TopLevel { attributes: Box<Ast>, declaration: Box<Ast> },
-    Attributes { name: String, args: Vec<Box<Ast>> },
-    Binary {lhs: Box<Ast>, op: Token, rhs: Box<Ast>},
-    None,
-}
+pub trait AstVisitor {}
