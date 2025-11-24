@@ -6,7 +6,7 @@ pub struct Span {
     pub col: usize
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node<T> {
     pub kind: T,
     // pub span: Span,
@@ -19,7 +19,7 @@ impl<T> Node<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Type {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
@@ -44,7 +44,7 @@ pub enum BinaryOp {
     Eq, Neq, Lt, Le, Gt, Ge,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SizeOfTarget {
     Type(Type),
     Expr(Box<ExprNode>),
@@ -53,7 +53,7 @@ pub enum SizeOfTarget {
 pub type ExprNode = Node<Expr>;
 pub type StmtNode = Node<Stmt>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     LiteralInt(u64),
     LiteralFloat(f64),
@@ -75,7 +75,7 @@ pub enum Expr {
     StructInit { name: String, fields: Vec<(String, ExprNode)> }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     // {...}
     Block(Vec<StmtNode>),
@@ -172,5 +172,3 @@ pub struct Program {
     pub modules: Vec<ItemNode>,
     // pub span: Span,
 }
-
-pub trait AstVisitor {}

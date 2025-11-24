@@ -2,13 +2,19 @@ mod tokens;
 mod tokenizer;
 mod parser;
 mod ast;
+mod symbols;
+mod resolver;
+mod type_checker;
+mod visitor;
 
 use std::env;
 use std::process::exit;
 use std::fs::File;
 use std::io::prelude::*;
 use crate::parser::Parser;
+use crate::resolver::SymbolResolver;
 use crate::tokenizer::Tokenizer;
+use crate::visitor::ASTVisitor;
 
 fn main() {
     // first lets get args
@@ -47,7 +53,11 @@ fn main() {
     let b = parser.parse_program();
     println!("AST: ==================================");
     if b.is_ok() {
-        print!("{:?}", b.unwrap());
+        let mut a = b.unwrap();
+        println!("{:?}", a);
+        let mut resolver = SymbolResolver::new();
+        resolver.visit_program(&mut a);
+        println!("Symbol resolver errors: {:?}", resolver.errors);
     } else {
         print!("{:?}", b.err())
     }
