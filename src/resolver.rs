@@ -15,7 +15,6 @@ impl SymbolResolver {
         }
     }
 
-    // Helper to log errors
     fn error(&mut self, msg: String) {
         self.errors.push(msg);
     }
@@ -35,7 +34,7 @@ impl ASTVisitor<()> for SymbolResolver {
             Item::Enum(e) => self.visit_enum_decl(e),
             Item::Extern(e) => self.visit_extern_decl(e),
             Item::Global(g) => self.visit_global_decl(g),
-            Item::Import(_) => {}, // Imports logic omitted for brevity
+            Item::Import(_) => {},
         }
     }
 
@@ -85,7 +84,6 @@ impl ASTVisitor<()> for SymbolResolver {
     }
 
     fn visit_struct_decl(&mut self, decl: &mut StructDecl) {
-        // Simple registration of the struct name
         if let Err(e) = self.symbols.define(decl.name.clone(), Symbol {
             name: decl.name.clone(),
             kind: SymbolKind::Struct,
@@ -93,7 +91,6 @@ impl ASTVisitor<()> for SymbolResolver {
         }) {
             self.errors.push(e);
         }
-        // TODO: You might want to store fields in a separate "TypeEnv" later
     }
 
     fn visit_enum_decl(&mut self, decl: &mut EnumDecl) {
@@ -141,7 +138,6 @@ impl ASTVisitor<()> for SymbolResolver {
             },
             Stmt::If { condition, then_branch, else_branch } => {
                 self.visit_expr(condition);
-                // Note: Block stmts handle their own scoping, so we just visit
                 self.visit_stmt(then_branch);
                 if let Some(else_b) = else_branch {
                     self.visit_stmt(else_b);
@@ -152,7 +148,7 @@ impl ASTVisitor<()> for SymbolResolver {
                 self.visit_stmt(body);
             },
             Stmt::For { init, condition, update, body } => {
-                self.symbols.enter_scope(); // Implicit scope for loop var
+                self.symbols.enter_scope();
 
                 if let Some(i) = init { self.visit_stmt(i); }
                 if let Some(c) = condition { self.visit_expr(c); }
@@ -166,7 +162,7 @@ impl ASTVisitor<()> for SymbolResolver {
                 if let Some(e) = opt_e { self.visit_expr(e); }
             },
             Stmt::Expression(e) => { self.visit_expr(e); },
-            _ => {} // Break, Continue
+            _ => {} 
         }
     }
 
@@ -174,8 +170,7 @@ impl ASTVisitor<()> for SymbolResolver {
         match &mut expr.kind {
             Expr::Identifier(name) => {
                 if let Some(sym) = self.symbols.resolve(name) {
-                    // Success! We found it.
-                    // We could optionally verify mutability here if we passed context.
+                    // TODO: Check mutability here?
                 } else {
                     self.errors.push(format!("Undefined variable '{}'", name));
                 }
@@ -195,7 +190,6 @@ impl ASTVisitor<()> for SymbolResolver {
             },
             Expr::MemberAccess { object, .. } => {
                 self.visit_expr(object);
-                // Member resolution usually happens in TypeCheck, not SymbolResolve
             },
             Expr::Index { array, index } => {
                 self.visit_expr(array);
@@ -212,7 +206,7 @@ impl ASTVisitor<()> for SymbolResolver {
                     self.visit_expr(e);
                 }
             }
-            _ => {} // Literals, Null
+            _ => {}
         }
     }
 }
