@@ -85,7 +85,7 @@ impl<'a> Parser<'a> {
             }?;
             modules.push(a);
         }
-        self.consume(TokenType::EOF, "program didn't end with EOF")?;
+        self.consume(TokenType::EOF, "Unexpected token after end of main module. Expected EOF.")?;
         Ok(Program {
             modules,
         })
@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
             let item_kind = match t.token_type {
                 TokenType::Import => {
                     if !attributes.is_empty() {
-                        Err(self.creat_compiler_error("Imports cannot have attributes".to_string(), t.span.clone()))?
+                        Err(self.creat_compiler_error("Attributes are not allowed on import statements.".to_string(), t.span.clone()))?
                     }
                     self.parse_import_decl()?
                 },
@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
                 TokenType::Struct => self.parse_struct_decl(attributes)?,
                 TokenType::Enum => self.parse_enum_decl(attributes)?,
                 TokenType::Const | TokenType::Var => self.parse_global_decl(attributes)?,
-                _ => return Err(self.creat_compiler_error(format!("Expected top-level declaration, found {:?}", t.token_type), t.span.clone())),
+                _ => return Err(self.creat_compiler_error(format!("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found '{:?}'.", t.token_type), t.span.clone())),
             };
             Ok(ItemNode {
                 kind: item_kind,
@@ -118,18 +118,18 @@ impl<'a> Parser<'a> {
                 ty: None,
             })
         } else {
-            Err(self.creat_compiler_error("Expected top-level declaration, found EOF".to_string(), Span::default()))
+            Err(self.creat_compiler_error("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found EOF".to_string(), Span::default()))
         }
     }
 
     fn parse_attribute(&mut self) -> Result<Attribute, CompilerError<'a>> {
         Ok(Attribute {
-            name: self.consume(TokenType::Identifier, "expected identifier before attribute.")?.literal,
+            name: self.consume(TokenType::Identifier, "Expected attribute name (identifier) after '@'.")?.literal,
             args: {
                 let mut args: Vec<ExprNode> = vec![];
                 if let Some(_) = self.matches(TokenType::LeftParen) {
                     args = self.parse_arg_list()?;
-                    self.consume(TokenType::RightParen, "expected ')'")?;
+                    self.consume(TokenType::RightParen, "Expected ')' to close attribute argument list.")?;
                 }
                 args
             },
@@ -137,25 +137,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_import_decl(&mut self) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Import, "Bug")?;
-        let name = self.consume(TokenType::String, "need string after import")?.literal;
-        self.consume(TokenType::Semicolon, "need ';' after import")?;
+        self.consume(TokenType::Import, "Bug")?; // TODO: unreachable!("parse_import_decl called without Import token")
+        let name = self.consume(TokenType::String, "Expected string literal after 'import' keyword.")?.literal;
+        self.consume(TokenType::Semicolon, "Expected ';' after import declaration.")?;
         Ok(Item::Import(name))
     }
 
     fn parse_extern(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Extern, "Bug")?;
-        let abi = self.consume(TokenType::String, "expected a String after extern")?.literal;
-        self.consume(TokenType::Fn, "expected Fn after extern api String")?;
-        let name = self.consume(TokenType::Identifier, "need identifier after Fn")?.literal;
-        self.consume(TokenType::LeftParen, "expected '('")?;
+        self.consume(TokenType::Extern, "Bug")?; // TODO: unreachable!()
+        let abi = self.consume(TokenType::String, "Expected ABI string literal (e.g., \"C\") after 'extern'.")?.literal;
+        self.consume(TokenType::Fn, "Expected 'fn' keyword after extern ABI.")?;
+        let name = self.consume(TokenType::Identifier, "Expected function name after 'fn'.")?.literal;
+        self.consume(TokenType::LeftParen, "Expected '(' to start parameter list.")?;
         let params = self.parse_param_list()?;
-        self.consume(TokenType::RightParen, "expected ')'")?;
+        self.consume(TokenType::RightParen, "Expected ')' to end parameter list.")?;
         let mut return_type = Type::Void;
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
         }
-        self.consume(TokenType::Semicolon, "expected ';' at end of extern")?;
+        self.consume(TokenType::Semicolon, "Expected ';' after extern function declaration.")?;
         Ok(Item::Extern( ExternDecl {
             attributes,
             abi,
@@ -187,12 +187,12 @@ impl<'a> Parser<'a> {
                 TokenType::Star => Ok(Type::Pointer(Box::new(self.parse_type()?))),
                 TokenType::LeftBracket => {
                     let expr = self.parse_expression()?;
-                    self.consume(TokenType::RightBracket, "expected ']'")?;
+                    self.consume(TokenType::RightBracket, "Expected ']' to close array type dimension.")?;
                     let a = Type::Array(Box::new(self.parse_type()?), Box::new(expr));
                     Ok(a)
                 },
                 TokenType::Fn => {
-                    self.consume(TokenType::LeftParen, "expected '('")?;
+                    self.consume(TokenType::LeftParen, "Expected '(' to start function type parameter list.")?;
                     let params = self.parse_type_list()?;
                     let mut return_type = Type::Void;
                     if let Some(_) = self.matches(TokenType::Arrow) {
@@ -203,10 +203,10 @@ impl<'a> Parser<'a> {
                         ret: Box::new(return_type),
                     })
                 },
-                _ => Err(self.creat_compiler_error(format!("Expected a type found {:?}", t.token_type), t.span.clone()))
+                _ => Err(self.creat_compiler_error(format!("Expected a type specifier. Found '{:?}'.", t.token_type), t.span.clone()))
             }
         } else {
-            Err(self.creat_compiler_error("Expected a type found EOF".to_string(), Span::default()))
+            Err(self.creat_compiler_error("Unexpected end of file while parsing type.".to_string(), Span::default()))
         }
     }
 
@@ -222,16 +222,16 @@ impl<'a> Parser<'a> {
     // Declarations
 
     fn parse_fn_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Fn, "Expected function declaration")?;
-        let name = self.consume(TokenType::Identifier, "need identifier after fn")?.literal;
-        self.consume(TokenType::LeftParen, "expected '('")?;
+        self.consume(TokenType::Fn, "Expected function declaration")?; // TODO: unreachable!()
+        let name = self.consume(TokenType::Identifier, "Expected function name after 'fn' keyword.")?.literal;
+        self.consume(TokenType::LeftParen, "Expected '(' to start function parameter list.")?;
         let mut params = vec![];
         if let Some(tt) = self.peek_type() {
             if tt != TokenType::RightParen {
                 params = self.parse_param_list()?;
             }
         }
-        self.consume(TokenType::RightParen, "expected ')'")?;
+        self.consume(TokenType::RightParen, "Expected ')' to end function parameter list.")?;
         let mut return_type = Type::Void;
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
@@ -256,16 +256,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_param(&mut self) -> Result<(String, Type), CompilerError<'a>> {
-        let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
-        self.consume(TokenType::Colon, "Expected :")?;
+        let name = self.consume(TokenType::Identifier, "Expected parameter name.")?.literal;
+        self.consume(TokenType::Colon, "Expected ':' after name.")?;
         let ty = self.parse_type()?;
         Ok((name, ty))
     }
 
     fn parse_struct_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Struct, "Expected struct declaration")?;
-        let name = self.consume(TokenType::Identifier, "need identifier after struct")?.literal;
-        self.consume(TokenType::LeftBrace, "Expected {")?;
+        self.consume(TokenType::Struct, "Expected struct declaration")?; // TODO: unreachable!()
+        let name = self.consume(TokenType::Identifier, "Expected struct name after 'struct' keyword.")?.literal;
+        self.consume(TokenType::LeftBrace, "Expected '{' to begin struct body.")?;
         let mut fields: Vec<(String, Type)> = vec![];
         while let None = self.matches(TokenType::RightBrace) {
             fields.push(self.parse_struct_field()?);
@@ -278,16 +278,16 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_field(&mut self) -> Result<(String, Type), CompilerError<'a>> {
-        let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
-        self.consume(TokenType::Colon, "Expected :")?;
+        let name = self.consume(TokenType::Identifier, "Expected field name.")?.literal;
+        self.consume(TokenType::Colon, "Expected ':' after name.")?;
         let ty = self.parse_type()?;
-        self.consume(TokenType::Semicolon, "Expected ;")?;
+        self.consume(TokenType::Semicolon, "Expected ';' after struct field declaration.")?;
         Ok((name, ty))
     }
 
     fn parse_enum_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Enum, "Expected enum declaration")?;
-        let name = self.consume(TokenType::Identifier, "need identifier after enum")?.literal;
+        self.consume(TokenType::Enum, "Expected enum declaration")?; // TODO: unreachable!()
+        let name = self.consume(TokenType::Identifier, "Expected enum name after 'enum' keyword.")?.literal;
         self.consume(TokenType::LeftBrace, "Expected {")?;
         let mut variants: Vec<(String, Option<ExprNode>)> = vec![];
         variants.push(self.parse_enum_item()?);
@@ -297,7 +297,7 @@ impl<'a> Parser<'a> {
             }
             variants.push(self.parse_enum_item()?);
         }
-        self.consume(TokenType::RightBrace, "Expected }")?;
+        self.consume(TokenType::RightBrace, "Expected '}' to end enum body.")?;
         Ok(Item::Enum(EnumDecl {
             attributes,
             name,
@@ -328,14 +328,14 @@ impl<'a> Parser<'a> {
             return Err(self.creat_compiler_error("Bug".to_string(), Span::default()));
         }
         self.current += 1; // const|var
-        let name = self.consume(TokenType::Identifier, "need identifier after global declaration")?.literal;
-        self.consume(TokenType::Colon, "Expected :")?;
+        let name = self.consume(TokenType::Identifier, "Expected identifier for global variable.")?.literal;
+        self.consume(TokenType::Colon, "Expected ':' to specify type.")?;
         let ty = self.parse_type()?;
         let mut init: Option<ExprNode> = None;
         if let Some(_) = self.matches(TokenType::Equal) {
             init = Some(self.parse_expression()?);
         }
-        self.consume(TokenType::Semicolon, "Expected ;")?;
+        self.consume(TokenType::Semicolon, "Expected ';' after global variable declaration.")?;
         Ok(Item::Global(GlobalDecl {
             attributes,
             name,
@@ -368,12 +368,12 @@ impl<'a> Parser<'a> {
                 TokenType::Return => self.parse_return_stmt(),
                 TokenType::Break => {
                     self.current += 1;
-                    self.consume(TokenType::Semicolon, "Expected ;")?;
+                    self.consume(TokenType::Semicolon, "Expected ';' at the end of statement.")?;
                     Ok(StmtNode::new(Stmt::Break, t.span.clone()))
                 }
                 TokenType::Continue => {
                     self.current += 1;
-                    self.consume(TokenType::Semicolon, "Expected ;")?;
+                    self.consume(TokenType::Semicolon, "Expected ';' at the end of statement.")?;
                     Ok(StmtNode::new(Stmt::Continue, t.span.clone()))
                 }
                 _ => self.parse_assignment_or_expr_stmt(),
@@ -423,14 +423,14 @@ impl<'a> Parser<'a> {
         let target = self.parse_expression()?;
         if let Some(_) = self.matches(TokenType::Equal) {
             let value = self.parse_expression()?;
-            self.consume(TokenType::Semicolon, "Expected ;")?;
+            self.consume(TokenType::Semicolon, "Expected ';' at the end of statement.")?;
             let span = Span::sum(target.span, value.span);
             Ok(StmtNode::new(Stmt::Assign {
                 target,
                 value
             }, span))
         } else {
-            self.consume(TokenType::Semicolon, "Expected ;")?;
+            self.consume(TokenType::Semicolon, "Expected ';' at the end of statement.")?;
             let span= target.span.clone();
             Ok(StmtNode::new(Stmt::Expression(target), span))
         }
@@ -464,7 +464,7 @@ impl<'a> Parser<'a> {
                     TokenType::If => Some(Box::new(self.parse_if_stmt()?)),
                     TokenType::LeftBrace => Some(Box::new(self.parse_block()?)),
                     _ => {
-                        return Err(self.creat_compiler_error(format!("Unexpected token {:?}", t), t.span.clone()));
+                        return Err(self.creat_compiler_error("Unexpected token in 'else' clause. Expected 'if' or block.".to_string(), t.span.clone()));
                     }
                 };
             } else {
@@ -492,8 +492,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_for_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
-        let span = self.consume(TokenType::For, "Expected 'for' keyword")?.span.clone();
-        self.consume(TokenType::LeftParen, "Expected '(' after 'for'")?;
+        let span = self.consume(TokenType::For, "Expected 'for' keyword")?.span.clone(); // TODO: unreachable!();
+        self.consume(TokenType::LeftParen, "Expected '(' after 'for' to begin loop clauses.")?;
         let init: Option<Box<StmtNode>> = if self.matches(TokenType::Semicolon).is_none() {
             let init_stmt = match self.peek_type() {
                 Some(TokenType::Let) | Some(TokenType::Var) => {
@@ -510,7 +510,7 @@ impl<'a> Parser<'a> {
 
         let condition: Option<ExprNode> = if self.matches(TokenType::Semicolon).is_none() {
             let expr = self.parse_expression()?;
-            self.consume(TokenType::Semicolon, "Expected ';' after loop condition")?;
+            self.consume(TokenType::Semicolon, "Expected ';' after 'for' loop condition.")?;
             Some(expr)
         } else {
             None
@@ -518,7 +518,7 @@ impl<'a> Parser<'a> {
 
         let update: Option<Box<StmtNode>> = if self.matches(TokenType::RightParen).is_none() {
             let stmt = self.parse_assignment_clause()?;
-            self.consume(TokenType::RightParen, "Expected ')' after loop increment")?;
+            self.consume(TokenType::RightParen, "Expected ')' after 'for' loop update clause.")?;
             Some(Box::new(stmt))
         } else {
             None
@@ -539,7 +539,7 @@ impl<'a> Parser<'a> {
         let mut expr: Option<ExprNode> = None;
         if let None = self.matches(TokenType::Semicolon) {
             expr = Some(self.parse_expression()?);
-            let span_a = self.consume(TokenType::Semicolon, "Expected ;")?.span;
+            let span_a = self.consume(TokenType::Semicolon, "Expected ';' at the end of statement.")?.span;
             span = Span::sum(span, span_a);
         }
         Ok(StmtNode::new(Stmt::Return(expr), span))
@@ -751,7 +751,7 @@ impl<'a> Parser<'a> {
                 },
                 TokenType::SizeOf => {
                     self.current += 1;
-                    self.consume(TokenType::LeftParen, "Expected (")?;
+                    self.consume(TokenType::LeftParen, "Expected '(' after 'sizeof'.")?;
                     let current = self.current; // check_point
                     let target: SizeOfTarget;
                     let ty = self.parse_type();
@@ -761,7 +761,7 @@ impl<'a> Parser<'a> {
                     } else {
                         target = SizeOfTarget::Type(ty?);
                     }
-                    let spana = self.consume(TokenType::RightParen, "Expected ')'")?.span;
+                    let spana = self.consume(TokenType::RightParen, "Expected ')' after 'sizeof' argument.")?.span;
                     Ok(ExprNode::new(Expr::SizeOf { target }, Span::sum(t.span, spana)))
                 },
                 _ => self.parse_postfix(),
@@ -778,7 +778,7 @@ impl<'a> Parser<'a> {
                 TokenType::LeftBracket => {
                     self.current += 1;
                     let idx = self.parse_expression()?;
-                    let s = self.consume(TokenType::RightBracket, "Expected ]")?.span;
+                    let s = self.consume(TokenType::RightBracket, "Expected ']' to close array index.")?.span;
                     Ok(ExprNode::new(Expr::Index {
                         array: Box::new(expr),
                         index: Box::new(idx),
@@ -795,7 +795,7 @@ impl<'a> Parser<'a> {
                 },
                 TokenType::Dot => {
                     self.current += 1;
-                    let member_token = self.consume(TokenType::Identifier, "Expected Identifier")?;
+                    let member_token = self.consume(TokenType::Identifier, "Expected member name after '.'.")?;
                     let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
                         object: Box::new(expr),
@@ -805,7 +805,7 @@ impl<'a> Parser<'a> {
                 },
                 TokenType::Arrow => {
                     self.current += 1;
-                    let member_token = self.consume(TokenType::Identifier, "Expected Identifier")?;
+                    let member_token = self.consume(TokenType::Identifier, "Expected member name after '->'.")?;
                     let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
                         object: Box::new(expr),
