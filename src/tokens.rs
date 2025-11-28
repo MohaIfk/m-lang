@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::error::Span;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenType {
@@ -77,12 +78,12 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
-    pub line: usize
+    pub span: Span,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, literal: String, line: usize) -> Self {
-        Token { token_type, literal, line }
+    pub fn new(token_type: TokenType, literal: String, span: Span) -> Self {
+        Token { token_type, literal, span }
     }
 }
 

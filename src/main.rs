@@ -6,6 +6,7 @@ mod symbols;
 mod resolver;
 mod type_checker;
 mod visitor;
+mod error;
 
 use std::env;
 use std::process::exit;
@@ -49,7 +50,7 @@ fn main() {
     for a in tokenizer.get_tokens() {
         println!("token {:?}: {:?}", a.token_type, a.literal);
     }
-    let mut parser = Parser::new(tokenizer.get_tokens().clone()); // TODO: no need to clone
+    let mut parser = Parser::new(tokenizer.get_tokens().clone(), &contents); // TODO: no need to clone
     let b = parser.parse_program();
     println!("AST: ==================================");
     if b.is_ok() {
@@ -59,6 +60,6 @@ fn main() {
         resolver.visit_program(&mut a);
         println!("Symbol resolver errors: {:?}", resolver.errors);
     } else {
-        print!("{:?}", b.err())
+        print!("{}", b.err().unwrap())
     }
 }

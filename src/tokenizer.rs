@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use crate::tokens::{TokenType, Token, get_keywork_hash_map};
+use crate::error::Span;
 
 pub struct Tokenizer<'a> {
     tokens: Vec<Token>,
     current: usize,
+    col: usize,
     start: usize,
-    pub line: usize,
+    start_col: usize,
+    line: usize,
     has_error: bool,
     source: &'a str,
     keyword_hash_map: HashMap<&'static str, TokenType>
@@ -16,7 +19,9 @@ impl<'a> Tokenizer<'a> {
         Self {
             tokens: vec![],
             current: 0,
+            col: 1,
             start: 0,
+            start_col: 1,
             line: 1,
             has_error: false,
             source,
@@ -28,6 +33,11 @@ impl<'a> Tokenizer<'a> {
         &self.tokens
     }
 
+    fn advance(&mut self) {
+        self.current+=1;
+        self.col+=1;
+    }
+
     fn peek(&self, index: usize) -> Option<u8> {
         self.source.as_bytes().get(self.current + index).cloned()
     }
@@ -35,7 +45,7 @@ impl<'a> Tokenizer<'a> {
     fn matches(&mut self, expected: u8) -> Option<u8> {
         if let Some(c) = self.source.as_bytes().get(self.current).cloned() {
             if c == expected {
-                self.current += 1;
+                self.advance();
                 return Some(c);
             }
         }
@@ -45,14 +55,16 @@ impl<'a> Tokenizer<'a> {
     pub fn generate_tokens(&mut self) -> Result<(), String> {
         while let Some(c) = self.peek(0) {
             self.start = self.current;
+            self.start_col = self.col;
 
             match c {
                 b' ' | b'\t' | b'\r' => {
-                    self.current += 1;
+                    self.advance();
                     continue;
                 }
                 b'\n' => {
                     self.line += 1;
+                    self.col = 1;
                     self.current += 1;
                     continue;
                 }
@@ -60,22 +72,23 @@ impl<'a> Tokenizer<'a> {
                     if let Some(d) = self.peek(1) {
                         if d == b'/' {
                             while let Some(d) = self.peek(0) {
-                                self.current += 1;
+                                self.advance();
                                 if d == b'\n' {
                                     self.line += 1;
+                                    self.col = 1;
                                     break;
                                 }
                             }
                             continue;
                         } else if d == b'*' {
                             while let Some(d) = self.peek(0) {
-                                self.current += 1;
+                                self.advance();
                                 if d == b'\n' {
                                     self.line += 1;
+                                    self.col = 1;
                                 }
                                 if d == b'*' {
                                     if let Some(_) = self.matches(b'/') {
-                                        self.current += 1;
                                         break;
                                     }
                                 }
@@ -95,7 +108,7 @@ impl<'a> Tokenizer<'a> {
                 self.tokens.push(a?);
             }
         }
-        self.tokens.push(Token::new(TokenType::EOF, "".to_string(), self.line));
+        self.tokens.push(Token::new(TokenType::EOF, "".to_string(), Span::new(self.current, self.current, self.line, self.col)));
         Ok(())
     }
 
@@ -109,7 +122,7 @@ impl<'a> Tokenizer<'a> {
             return Ok(self.get_keyword_or_identifier())
         }
 
-        self.current += 1;
+        self.advance();
         match c {
             b'(' => Ok(self.craft_token(TokenType::LeftParen)),
             b')' => Ok(self.craft_token(TokenType::RightParen)),
@@ -217,14 +230,14 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn craft_token(&mut self, token_type: TokenType) -> Token {
-        Token::new(token_type, self.source[self.start..self.current].to_string(), self.line)
+        Token::new(token_type, self.source[self.start..self.current].to_string(), Span::new(self.start, self.current, self.line, self.start_col))
     }
 
     fn get_number(&mut self) -> Token {
         let mut is_float: bool = false;
         while let Some(c) = self.peek(0) {
             if c.is_ascii_digit() {
-                self.current += 1;
+                self.advance();
             } else {
                 break
             }
@@ -234,12 +247,12 @@ impl<'a> Tokenizer<'a> {
             if let Some(d) = self.peek(1)  {
                 if c == b'.' && d.is_ascii_digit() { // we won't eat the dot if there is no digit ahead
                     is_float = true;
-                    self.current += 1;
+                    self.advance();
                 }
             }
             while let Some(c) = self.peek(0) {
                 if c.is_ascii_digit() {
-                    self.current += 1;
+                    self.advance();
                 } else {
                     break
                 }
@@ -252,7 +265,7 @@ impl<'a> Tokenizer<'a> {
     fn get_keyword_or_identifier(&mut self) -> Token {
         while let Some(c) = self.peek(0) {
             if c.is_ascii_alphanumeric() || c == b'_' {
-                self.current += 1;
+                self.advance();
             } else {
                 break
             }
@@ -269,12 +282,15 @@ impl<'a> Tokenizer<'a> {
     fn get_string(&mut self) -> Result<Token, String> {
         while let Some(c) = self.peek(0) {
             if c != b'"' {
-                self.current += 1;
-                if c == b'\n' { self.line += 1; }
+                self.advance();
+                if c == b'\n' { 
+                    self.line += 1; 
+                    self.col = 1;
+                }
                 if c == b'\\' {
                     if let Some(d) = self.peek(0) {
                         if d == b'"' || d == b'\\' {
-                            self.current += 1;
+                            self.advance();
                             continue
                         }
                     }
@@ -290,20 +306,20 @@ impl<'a> Tokenizer<'a> {
         } else {
             return Err("String must end with '\"'".to_string());
         }
-        self.current += 1;
-        Ok(Token::new(TokenType::String, self.source[self.start+1..self.current-1].to_string(), self.line))
+        self.advance();
+        Ok(Token::new(TokenType::String, self.source[self.start+1..self.current-1].to_string(), Span::new(self.start, self.current, self.line, self.start_col)))
     }
 
     fn get_char(&mut self) -> Result<Token, String> {
         if let Some(_) = self.peek(0) {
-            self.current += 1;
+            self.advance();
             if let Some(a) = self.peek(0) {
-                self.current += 1;
+                self.advance();
                 if a != b'\'' {
                     return Err(format!("Char must end with \"'\" found {}", a as char));
                 }
             }
-            Ok(Token::new(TokenType::Char, self.source[self.start+1..self.current-1].to_string(), self.line))
+            Ok(Token::new(TokenType::Char, self.source[self.start+1..self.current-1].to_string(), Span::new(self.start, self.current, self.line, self.start_col)))
         } else {
             Err("Unexpected EOF".to_string())
         }

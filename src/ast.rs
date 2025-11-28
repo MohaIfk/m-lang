@@ -1,21 +1,15 @@
-#[derive(Clone, Debug)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-    pub line: usize,
-    pub col: usize
-}
+use crate::error::Span;
 
 #[derive(Debug, Clone)]
 pub struct Node<T> {
     pub kind: T,
-    // pub span: Span,
+    pub span: Span,
     pub ty: Option<Type>, // for semantic analyzer
 }
 
 impl<T> Node<T> {
-    pub fn new(kind: T/*, span: Span*/) -> Self {
-        Self { kind, /*span,*/ ty: None }
+    pub fn new(kind: T, span: Span) -> Self {
+        Self { kind, span, ty: None }
     }
 }
 

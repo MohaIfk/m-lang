@@ -1,27 +1,24 @@
 use crate::tokens::{Token, TokenType};
 use crate::ast::*;
+use crate::error::{Span, CompilerError};
 
-pub struct Parser {
+pub struct Parser<'a> {
     tokens: Vec<Token>,
-    current: usize
+    current: usize,
+    file_source: &'a String,
 }
 
-#[derive(Debug)]
-pub struct ParseError {
-    message: String,
-    line: usize
-}
-
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser {
+impl<'a> Parser<'a> {
+    pub fn new(tokens: Vec<Token>, file_source: &'a String) -> Self {
+        Self {
             tokens,
-            current: 0
+            current: 0,
+            file_source
         }
     }
 
-    fn peek(&self, n: usize) -> Option<&Token> {
-        self.tokens.get(self.current + n)
+    fn peek(&self, n: usize) -> Option<Token> {
+        self.tokens.get(self.current + n).cloned()
     }
 
     fn peek_type(&self) -> Option<TokenType> {
@@ -32,38 +29,36 @@ impl Parser {
         }
     }
 
-    fn previous(&self) -> Option<&Token> {
-        self.tokens.get(self.current - 1)
+    fn previous(&self) -> Option<Token> {
+        self.tokens.get(self.current - 1).cloned()
     }
 
-    fn advance(&mut self) -> Option<&Token> {
+    fn advance(&mut self) -> Option<Token> {
         self.current += 1;
         self.previous()
     }
 
-    fn consume(&mut self, t: TokenType, msg: &str) -> Result<Token, ParseError> {
+    fn creat_compiler_error(&self, message: String, span: Span) -> CompilerError<'a> {
+        CompilerError::new(message, span, self.file_source)
+    }
+
+    fn consume(&mut self, t: TokenType, msg: &str) -> Result<Token, CompilerError<'a>> {
         if let Some(_t) = self.tokens.get(self.current) {
             if _t.token_type == t {
                 self.current += 1;
                 return Ok(_t.clone());
             }
             println!("found {:?}", _t);
-            return Err(ParseError {
-                message: msg.to_string(),
-                line: _t.line,
-            })
+            return Err(self.creat_compiler_error(msg.to_string(), _t.span.clone()))
         }
-        Err(ParseError {
-            message: msg.to_string(),
-            line: 0,
-        })
+        Err(self.creat_compiler_error(msg.to_string(), Span::default()))
     }
 
-    fn matches(&mut self, t: TokenType) -> Option<&Token> {
+    fn matches(&mut self, t: TokenType) -> Option<Token> {
         if let Some(_t) = self.tokens.get(self.current) {
             if _t.token_type == t {
                 self.current += 1;
-                return Some(_t);
+                return Some(_t.clone());
             }
         }
         None
@@ -81,7 +76,7 @@ impl Parser {
     }
 
     // Program Structure
-    pub fn parse_program(&mut self) -> Result<Program, ParseError> {
+    pub fn parse_program(&mut self) -> Result<Program, CompilerError<'a>> {
         let mut modules: Vec<ItemNode> = vec![];
         while let Some(tt) = self.peek_type() {
             let a = match tt {
@@ -96,7 +91,7 @@ impl Parser {
         })
     }
 
-    pub fn parse_top_level(&mut self) -> Result<ItemNode, ParseError> {
+    pub fn parse_top_level(&mut self) -> Result<ItemNode, CompilerError<'a>> {
         let mut attributes: Vec<Attribute> = vec![];
         while let Some(_q) = self.matches(TokenType::At) {
             attributes.push(self.parse_attribute()?);
@@ -106,10 +101,7 @@ impl Parser {
             let item_kind = match t.token_type {
                 TokenType::Import => {
                     if !attributes.is_empty() {
-                        return Err(ParseError {
-                            message: "Imports cannot have attributes".to_string(),
-                            line: t.line,
-                        });
+                        Err(self.creat_compiler_error("Imports cannot have attributes".to_string(), t.span.clone()))?
                     }
                     self.parse_import_decl()?
                 },
@@ -118,24 +110,19 @@ impl Parser {
                 TokenType::Struct => self.parse_struct_decl(attributes)?,
                 TokenType::Enum => self.parse_enum_decl(attributes)?,
                 TokenType::Const | TokenType::Var => self.parse_global_decl(attributes)?,
-                _ => return Err(ParseError {
-                    message: format!("Expected top-level declaration, found {:?}", t.token_type),
-                    line: t.line
-                }),
+                _ => return Err(self.creat_compiler_error(format!("Expected top-level declaration, found {:?}", t.token_type), t.span.clone())),
             };
             Ok(ItemNode {
                 kind: item_kind,
+                span: t.span.clone(),
                 ty: None,
             })
         } else {
-            Err(ParseError {
-                message: "Expected top-level declaration, found EOF".to_string(),
-                line: 0,
-            })
+            Err(self.creat_compiler_error("Expected top-level declaration, found EOF".to_string(), Span::default()))
         }
     }
 
-    fn parse_attribute(&mut self) -> Result<Attribute, ParseError> {
+    fn parse_attribute(&mut self) -> Result<Attribute, CompilerError<'a>> {
         Ok(Attribute {
             name: self.consume(TokenType::Identifier, "expected identifier before attribute.")?.literal,
             args: {
@@ -149,14 +136,14 @@ impl Parser {
         })
     }
 
-    fn parse_import_decl(&mut self) -> Result<Item, ParseError> {
+    fn parse_import_decl(&mut self) -> Result<Item, CompilerError<'a>> {
         self.consume(TokenType::Import, "Bug")?;
         let name = self.consume(TokenType::String, "need string after import")?.literal;
         self.consume(TokenType::Semicolon, "need ';' after import")?;
         Ok(Item::Import(name))
     }
 
-    fn parse_extern(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+    fn parse_extern(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
         self.consume(TokenType::Extern, "Bug")?;
         let abi = self.consume(TokenType::String, "expected a String after extern")?.literal;
         self.consume(TokenType::Fn, "expected Fn after extern api String")?;
@@ -181,7 +168,7 @@ impl Parser {
     }
 
     // Types
-    fn parse_type(&mut self) -> Result<Type, ParseError> {
+    fn parse_type(&mut self) -> Result<Type, CompilerError<'a>> {
         if let Some(t) = self.advance() {
             match t.token_type {
                 TokenType::U8 => Ok(Type::U8),
@@ -216,21 +203,14 @@ impl Parser {
                         ret: Box::new(return_type),
                     })
                 },
-                _ => Err(ParseError {
-                    message: format!("Expected a type found {:?}", t.token_type),
-                    line: t.line,
-                })
-
+                _ => Err(self.creat_compiler_error(format!("Expected a type found {:?}", t.token_type), t.span.clone()))
             }
         } else {
-            Err(ParseError {
-                message: "Expected a type found EOF".to_string(),
-                line: 0,
-            })
+            Err(self.creat_compiler_error("Expected a type found EOF".to_string(), Span::default()))
         }
     }
 
-    fn parse_type_list(&mut self) -> Result<Vec<Type>, ParseError> {
+    fn parse_type_list(&mut self) -> Result<Vec<Type>, CompilerError<'a>> {
         let mut types: Vec<Type> = vec![];
         types.push(self.parse_type()?);
         while let Some(_) = self.matches(TokenType::Comma) {
@@ -241,7 +221,7 @@ impl Parser {
 
     // Declarations
 
-    fn parse_fn_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+    fn parse_fn_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
         self.consume(TokenType::Fn, "Expected function declaration")?;
         let name = self.consume(TokenType::Identifier, "need identifier after fn")?.literal;
         self.consume(TokenType::LeftParen, "expected '('")?;
@@ -266,7 +246,7 @@ impl Parser {
         }))
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<(String, Type)>, ParseError> {
+    fn parse_param_list(&mut self) -> Result<Vec<(String, Type)>, CompilerError<'a>> {
         let mut params: Vec<(String, Type)> = vec![];
         params.push(self.parse_param()?);
         while let Some(_) = self.matches(TokenType::Comma) {
@@ -275,14 +255,14 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_param(&mut self) -> Result<(String, Type), ParseError> {
+    fn parse_param(&mut self) -> Result<(String, Type), CompilerError<'a>> {
         let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
         self.consume(TokenType::Colon, "Expected :")?;
         let ty = self.parse_type()?;
         Ok((name, ty))
     }
 
-    fn parse_struct_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+    fn parse_struct_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
         self.consume(TokenType::Struct, "Expected struct declaration")?;
         let name = self.consume(TokenType::Identifier, "need identifier after struct")?.literal;
         self.consume(TokenType::LeftBrace, "Expected {")?;
@@ -297,7 +277,7 @@ impl Parser {
         }))
     }
 
-    fn parse_struct_field(&mut self) -> Result<(String, Type), ParseError> {
+    fn parse_struct_field(&mut self) -> Result<(String, Type), CompilerError<'a>> {
         let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
         self.consume(TokenType::Colon, "Expected :")?;
         let ty = self.parse_type()?;
@@ -305,7 +285,7 @@ impl Parser {
         Ok((name, ty))
     }
 
-    fn parse_enum_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
+    fn parse_enum_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
         self.consume(TokenType::Enum, "Expected enum declaration")?;
         let name = self.consume(TokenType::Identifier, "need identifier after enum")?.literal;
         self.consume(TokenType::LeftBrace, "Expected {")?;
@@ -313,7 +293,7 @@ impl Parser {
         variants.push(self.parse_enum_item()?);
         while let Some(_) = self.matches(TokenType::Comma) {
             if let Some(tt) = self.peek_type() {
-               if tt == TokenType::RightBrace { break };
+                if tt == TokenType::RightBrace { break };
             }
             variants.push(self.parse_enum_item()?);
         }
@@ -325,7 +305,7 @@ impl Parser {
         }))
     }
 
-    fn parse_enum_item(&mut self) -> Result<(String, Option<ExprNode>), ParseError> {
+    fn parse_enum_item(&mut self) -> Result<(String, Option<ExprNode>), CompilerError<'a>> {
         let name = self.consume(TokenType::Identifier, "Expected identifier")?.literal;
         let mut expr: Option<ExprNode> = None;
         if let Some(_) = self.matches(TokenType::Equal) {
@@ -334,24 +314,18 @@ impl Parser {
         Ok((name, expr))
     }
 
-    fn parse_global_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, ParseError> {
-        let mut is_const: bool = false;
+    fn parse_global_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
+        let mut is_const = false;
         if let Some(t) = self.peek(0) {
             is_const = match t.token_type {
                 TokenType::Const => true,
                 TokenType::Var => true,
                 _ => {
-                    return Err(ParseError {
-                        message: "Bug".to_string(),
-                        line: t.line,
-                    });
+                    return Err(self.creat_compiler_error("Bug".to_string(), t.span.clone()));
                 },
             }
         } else {
-            return Err(ParseError {
-                message: "Bug".to_string(),
-                line: 0,
-            });
+            return Err(self.creat_compiler_error("Bug".to_string(), Span::default()));
         }
         self.current += 1; // const|var
         let name = self.consume(TokenType::Identifier, "need identifier after global declaration")?.literal;
@@ -372,16 +346,19 @@ impl Parser {
     }
 
     // Statements
-    fn parse_block(&mut self) -> Result<StmtNode, ParseError> {
-        self.consume(TokenType::LeftBrace, "Expected {")?;
+    fn parse_block(&mut self) -> Result<StmtNode, CompilerError<'a>> {
+        let mut span = self.consume(TokenType::LeftBrace, "Expected {")?.span.clone();
         let mut stmts: Vec<StmtNode> = vec![];
         while let None = self.matches(TokenType::RightBrace) {
             stmts.push(self.parse_statement()?);
         }
-        Ok(StmtNode::new(Stmt::Block(stmts)))
+        if let Some(stmt) = stmts.last() {
+            span = Span::sum(span, stmt.span);
+        }
+        Ok(StmtNode::new(Stmt::Block(stmts), span))
     }
 
-    fn parse_statement(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_statement(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         if let Some(t) = self.peek(0) {
             match t.token_type {
                 TokenType::Let | TokenType::Var => self.parse_var_decl_stmt(),
@@ -392,44 +369,36 @@ impl Parser {
                 TokenType::Break => {
                     self.current += 1;
                     self.consume(TokenType::Semicolon, "Expected ;")?;
-                    Ok(StmtNode::new(Stmt::Break))
+                    Ok(StmtNode::new(Stmt::Break, t.span.clone()))
                 }
                 TokenType::Continue => {
                     self.current += 1;
                     self.consume(TokenType::Semicolon, "Expected ;")?;
-                    Ok(StmtNode::new(Stmt::Continue))
+                    Ok(StmtNode::new(Stmt::Continue, t.span.clone()))
                 }
                 _ => self.parse_assignment_or_expr_stmt(),
             }
         } else {
-            Err(ParseError {
-                message: "Unexpected EOF.".to_string(),
-                line: 0,
-            })
+            Err(self.creat_compiler_error("Expected a type found EOF".to_string(), Span::default()))
         }
     }
 
-    fn parse_var_decl_clause(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_var_decl_clause(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         let mut is_mutable: bool = false;
         if let Some(t) = self.peek(0) {
             is_mutable = match t.token_type {
                 TokenType::Let => false,
                 TokenType::Var => true,
                 _ => {
-                    return Err(ParseError {
-                        message: "Bug".to_string(),
-                        line: t.line,
-                    });
+                    return Err(self.creat_compiler_error("Bug".to_string(), t.span.clone()));
                 },
             }
         } else {
-            return Err(ParseError {
-                message: "Bug".to_string(),
-                line: 0,
-            });
+            return Err(self.creat_compiler_error("Bug".to_string(), Span::default()));
         }
         self.current += 1; // let|var
-        let name = self.consume(TokenType::Identifier, "need identifier after global declaration")?.literal;
+        let name_token = self.consume(TokenType::Identifier, "need identifier after global declaration")?;
+        let name = name_token.literal;
         self.consume(TokenType::Colon, "Expected :")?;
         let ty = self.parse_type()?;
         let mut init: Option<ExprNode> = None;
@@ -441,88 +410,89 @@ impl Parser {
             name,
             ty,
             init,
-        }))
+        }, name_token.span.clone()))
     }
 
-    fn parse_var_decl_stmt(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_var_decl_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         let var_decl_clause = self.parse_var_decl_clause()?;
-        self.consume(TokenType::Semicolon, "Expectedhh ;")?;
+        self.consume(TokenType::Semicolon, "Expected ;")?;
         Ok(var_decl_clause)
     }
 
-    fn parse_assignment_or_expr_stmt(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_assignment_or_expr_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         let target = self.parse_expression()?;
         if let Some(_) = self.matches(TokenType::Equal) {
             let value = self.parse_expression()?;
             self.consume(TokenType::Semicolon, "Expected ;")?;
+            let span = Span::sum(target.span, value.span);
             Ok(StmtNode::new(Stmt::Assign {
                 target,
                 value
-            }))
+            }, span))
         } else {
             self.consume(TokenType::Semicolon, "Expected ;")?;
-            Ok(StmtNode::new(Stmt::Expression(target)))
+            let span= target.span.clone();
+            Ok(StmtNode::new(Stmt::Expression(target), span))
         }
     }
 
-    fn parse_assignment_clause(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_assignment_clause(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         let target = self.parse_expression()?;
         self.consume(TokenType::Equal, "Expected =")?;
         let value = self.parse_expression()?;
+        let span = Span::sum(target.span, value.span);
         Ok(StmtNode::new(Stmt::Assign {
             target,
             value
-        }))
+        }, span))
     }
 
-    fn parse_assignment_stmt(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_assignment_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         let assignment_clause = self.parse_assignment_clause()?;
         self.consume(TokenType::Semicolon, "Expected ;")?;
         Ok(assignment_clause)
     }
 
-    fn parse_if_stmt(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_if_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         self.consume(TokenType::If, "Bug in If")?;
         let condition = self.parse_expression()?;
         let then_branch = Box::new(self.parse_block()?);
         let mut else_branch: Option<Box<StmtNode>> = None;
         if let Some(_) = self.matches(TokenType::Else) {
-             if let Some(t) = self.peek(0) {
+            if let Some(t) = self.peek(0) {
                 else_branch = match t.token_type {
                     TokenType::If => Some(Box::new(self.parse_if_stmt()?)),
                     TokenType::LeftBrace => Some(Box::new(self.parse_block()?)),
-                    _ => { return  Err(ParseError {
-                        message: format!("Unexpected token {:?}", t),
-                        line: t.line,
-                    }) }
+                    _ => {
+                        return Err(self.creat_compiler_error(format!("Unexpected token {:?}", t), t.span.clone()));
+                    }
                 };
             } else {
-                return  Err(ParseError {
-                    message: "Unexpected EOF".to_string(),
-                    line: 0,
-                })
+                return Err(self.creat_compiler_error("Unexpected EOF".to_string(), Span::default()));
             }
         }
 
+        let span = condition.span.clone();
         Ok(StmtNode::new(Stmt::If {
             condition,
             then_branch,
             else_branch,
-        }))
+        }, span))
     }
 
-    fn parse_while_stmt(&mut self) -> Result<StmtNode, ParseError> {
+    fn parse_while_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
         self.consume(TokenType::While, "Bug in While")?;
         let condition = self.parse_expression()?;
         let body = Box::new(self.parse_block()?);
+        let span = condition.span.clone();
         Ok(StmtNode::new(Stmt::While {
             condition,
             body
-        }))
+        }, span))
     }
 
-    fn parse_for_stmt(&mut self) -> Result<StmtNode, ParseError> {
-        self.consume(TokenType::For, "Expected 'for' keyword")?;
+    fn parse_for_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
+        let span = self.consume(TokenType::For, "Expected 'for' keyword")?.span.clone();
         self.consume(TokenType::LeftParen, "Expected '(' after 'for'")?;
         let init: Option<Box<StmtNode>> = if self.matches(TokenType::Semicolon).is_none() {
             let init_stmt = match self.peek_type() {
@@ -554,7 +524,6 @@ impl Parser {
             None
         };
 
-        // 4. Body: block
         let body = self.parse_block()?;
 
         Ok(StmtNode::new(Stmt::For {
@@ -562,67 +531,72 @@ impl Parser {
             condition,
             update,
             body: Box::new(body),
-        }))
+        },span))
     }
 
-    fn parse_return_stmt(&mut self) -> Result<StmtNode, ParseError> {
-        self.consume(TokenType::Return, "Bug in Return")?;
+    fn parse_return_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {
+        let mut span = self.consume(TokenType::Return, "Bug in Return")?.span.clone();
         let mut expr: Option<ExprNode> = None;
         if let None = self.matches(TokenType::Semicolon) {
             expr = Some(self.parse_expression()?);
-            self.consume(TokenType::Semicolon, "Expected ;")?;
+            let span_a = self.consume(TokenType::Semicolon, "Expected ;")?.span;
+            span = Span::sum(span, span_a);
         }
-        Ok(StmtNode::new(Stmt::Return(expr)))
+        Ok(StmtNode::new(Stmt::Return(expr), span))
     }
 
     // Expressions
-    fn parse_expression(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_expression(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         self.parse_logical_or()
     }
 
-    fn parse_logical_or(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_logical_or(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_logical_and()?;
-        while let Some(t) = self.matches(TokenType::PipePipe).cloned() {
+        while let Some(t) = self.matches(TokenType::PipePipe) {
             let rhs = self.parse_logical_and()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: BinaryOp::Or,
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_logical_and(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_logical_and(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_equality()?;
-        while let Some(t) = self.matches(TokenType::AmpersandAmpersand).cloned() {
+        while let Some(t) = self.matches(TokenType::AmpersandAmpersand) {
             let rhs = self.parse_equality()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: BinaryOp::And,
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_equality(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_equality(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_comparison()?;
         while let Some(t) = self.m_matches(vec![TokenType::EqualEqual, TokenType::BangEqual]).cloned() {
             let rhs = self.parse_comparison()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: { if t.token_type == TokenType::BangEqual { BinaryOp::Neq } else { BinaryOp::Eq }},
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_comparison(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_comparison(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_bitwise_or()?;
         while let Some(t) = self.m_matches(vec![TokenType::Less, TokenType::Greater, TokenType::LessEqual, TokenType::GreaterEqual]).cloned() {
             let rhs = self.parse_bitwise_or()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: {
@@ -634,80 +608,86 @@ impl Parser {
                     }
                 },
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_bitwise_or(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_bitwise_xor()?;
-        while let Some(t) = self.matches(TokenType::Pipe).cloned() {
+        while let Some(t) = self.matches(TokenType::Pipe) {
             let rhs = self.parse_bitwise_xor()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: BinaryOp::BitOr,
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_bitwise_xor(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_bitwise_and()?;
-        while let Some(t) = self.matches(TokenType::Caret).cloned() {
+        while let Some(t) = self.matches(TokenType::Caret) {
             let rhs = self.parse_bitwise_and()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: BinaryOp::BitXor,
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_bitwise_and(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_shift()?;
-        while let Some(t) = self.matches(TokenType::Ampersand).cloned() {
+        while let Some(t) = self.matches(TokenType::Ampersand) {
             let rhs = self.parse_shift()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: BinaryOp::BitAnd,
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_shift(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_shift(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_term()?;
         while let Some(t) = self.m_matches(vec![TokenType::LessLess, TokenType::GreaterGreater]).cloned() {
             let rhs = self.parse_term()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: { if t.token_type == TokenType::LessLess { BinaryOp::Shl } else { BinaryOp::Shr }},
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_term(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_term(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_factor()?;
         while let Some(t) = self.m_matches(vec![TokenType::Plus, TokenType::Minus]).cloned() {
             let rhs = self.parse_factor()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: { if t.token_type == TokenType::Plus { BinaryOp::Add } else { BinaryOp::Sub }},
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_factor(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_factor(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_cast()?;
         while let Some(t) = self.m_matches(vec![TokenType::Star, TokenType::Slash, TokenType::Percent]).cloned() {
             let rhs = self.parse_cast()?;
+            let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
                 lhs: Box::new(expr),
                 op: {
@@ -718,54 +698,56 @@ impl Parser {
                     }
                 },
                 rhs: Box::new(rhs)
-            })
+            }, span)
         }
         Ok(expr)
     }
 
-    fn parse_cast(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_cast(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let expr = self.parse_unary()?;
         if let Some(t) = self.matches(TokenType::As) {
             let target = self.parse_type()?;
+            let span = Span::sum(expr.span, self.previous().unwrap().span);
             Ok(ExprNode::new(Expr::Cast {
                 expr: Box::new(expr),
                 target,
-            }))
+            }, span))
         } else {
             Ok(expr)
         }
     }
 
-    fn parse_unary(&mut self) -> Result<ExprNode, ParseError> {
-        if let Some(tt) = self.peek_type() {
+    fn parse_unary(&mut self) -> Result<ExprNode, CompilerError<'a>> {
+        if let Some(t) = self.peek(0) {
+            let tt = t.token_type.clone();
             match tt {
                 TokenType::Bang => {
                     self.current += 1;
                     Ok(ExprNode::new(Expr::Unary {
                         op: UnaryOp::Not,
                         rhs: Box::new(self.parse_unary()?),
-                    }))
+                    }, t.span))
                 },
                 TokenType::Minus => {
                     self.current += 1;
                     Ok(ExprNode::new(Expr::Unary {
                         op: UnaryOp::Neg,
                         rhs: Box::new(self.parse_unary()?),
-                    }))
+                    }, t.span))
                 },
                 TokenType::Star => {
                     self.current += 1;
                     Ok(ExprNode::new(Expr::Unary {
                         op: UnaryOp::Deref,
                         rhs: Box::new(self.parse_unary()?),
-                    }))
+                    }, t.span))
                 },
                 TokenType::Ampersand => {
                     self.current += 1;
                     Ok(ExprNode::new(Expr::Unary {
                         op: UnaryOp::AddressOf,
                         rhs: Box::new(self.parse_unary()?),
-                    }))
+                    }, t.span))
                 },
                 TokenType::SizeOf => {
                     self.current += 1;
@@ -779,8 +761,8 @@ impl Parser {
                     } else {
                         target = SizeOfTarget::Type(ty?);
                     }
-                    self.consume(TokenType::RightParen, "Expected ')'")?;
-                    Ok(ExprNode::new(Expr::SizeOf { target }))
+                    let spana = self.consume(TokenType::RightParen, "Expected ')'")?.span;
+                    Ok(ExprNode::new(Expr::SizeOf { target }, Span::sum(t.span, spana)))
                 },
                 _ => self.parse_postfix(),
             }
@@ -789,45 +771,47 @@ impl Parser {
         }
     }
 
-    fn parse_postfix(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_postfix(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let expr = self.parse_primary()?;
         if let Some(t) = self.peek(0) {
             match t.token_type {
                 TokenType::LeftBracket => {
                     self.current += 1;
                     let idx = self.parse_expression()?;
-                    self.consume(TokenType::RightBracket, "Expected ]")?;
+                    let s = self.consume(TokenType::RightBracket, "Expected ]")?.span;
                     Ok(ExprNode::new(Expr::Index {
                         array: Box::new(expr),
                         index: Box::new(idx),
-                    }))
+                    }, Span::sum(t.span, s)))
                 },
                 TokenType::LeftParen => {
                     self.current += 1;
                     let args = self.parse_arg_list()?;
-                    self.consume(TokenType::RightParen, "Expected )")?;
+                    let s = self.consume(TokenType::RightParen, "Expected )")?.span;
                     Ok(ExprNode::new(Expr::Call {
                         callee: Box::new(expr),
                         args,
-                    }))
+                    }, Span::sum(t.span, s)))
                 },
                 TokenType::Dot => {
                     self.current += 1;
-                    let member = self.consume(TokenType::Identifier, "Expected Identifier")?.literal;
+                    let member_token = self.consume(TokenType::Identifier, "Expected Identifier")?;
+                    let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
                         object: Box::new(expr),
                         member,
                         is_arrow: false,
-                    }))
+                    }, Span::sum(t.span, member_token.span)))
                 },
                 TokenType::Arrow => {
                     self.current += 1;
-                    let member = self.consume(TokenType::Identifier, "Expected Identifier")?.literal;
+                    let member_token = self.consume(TokenType::Identifier, "Expected Identifier")?;
+                    let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
                         object: Box::new(expr),
                         member,
                         is_arrow: true,
-                    }))
+                    }, Span::sum(t.span, member_token.span)))
                 }
                 _ => Ok(expr)
             }
@@ -836,55 +820,59 @@ impl Parser {
         }
     }
 
-    fn parse_postfix_op(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_postfix_op(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         todo!()
     }
 
-    fn parse_primary(&mut self) -> Result<ExprNode, ParseError> {
+    fn parse_primary(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         if let Some(t) = self.advance() {
             match t.token_type {
                 TokenType::Int => {
-                    Ok(ExprNode::new(Expr::LiteralInt(t.literal.parse().unwrap())))
+                    Ok(ExprNode::new(Expr::LiteralInt(t.literal.parse().unwrap()), t.span))
                 },
                 TokenType::Float => {
-                    Ok(ExprNode::new(Expr::LiteralFloat(t.literal.parse().unwrap())))
+                    Ok(ExprNode::new(Expr::LiteralFloat(t.literal.parse().unwrap()), t.span))
                 },
-                TokenType::String => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()))),
-                TokenType::Char => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()))),
-                TokenType::True => Ok(ExprNode::new(Expr::LiteralBool(true))),
-                TokenType::False => Ok(ExprNode::new(Expr::LiteralBool(false))),
-                TokenType::Null => Ok(ExprNode::new(Expr::Null)),
-                TokenType::Identifier => Ok(ExprNode::new(Expr::Identifier(t.literal.clone()))),
+                TokenType::String => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
+                TokenType::Char => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
+                TokenType::True => Ok(ExprNode::new(Expr::LiteralBool(true), t.span)),
+                TokenType::False => Ok(ExprNode::new(Expr::LiteralBool(false), t.span)),
+                TokenType::Null => Ok(ExprNode::new(Expr::Null, t.span)),
+                TokenType::Identifier => {
+                    if self.matches(TokenType::LeftBrace).is_some() {
+                        let mut fields: Vec<(String, ExprNode)> = vec![];
+                        while let Some(_t) = self.matches(TokenType::Identifier) {
+                            self.consume(TokenType::Colon, "Expected ':'")?;
+                            fields.push((_t.literal.clone(), self.parse_primary()?));
+                            if let None = self.matches(TokenType::Comma) {
+                                break;
+                            }
+                        }
+                        let span = Span::sum(t.span, self.consume(TokenType::RightBrace, "expected '}'")?.span);
+                        Ok(ExprNode::new(Expr::StructInit {
+                            name: t.literal,
+                            fields,
+                        }, span))
+                    } else {
+                        Ok(ExprNode::new(Expr::Identifier(t.literal), t.span))
+                    }
+                },
                 TokenType::LeftParen => {
                     let expr = self.parse_expression()?;
                     self.consume(TokenType::RightParen, "Expected ')'")?;
                     Ok(expr)
                 },
-                _ => {self.current -= 1;self.parse_struct_init()}
+                _ => Err(self.creat_compiler_error(format!("Unexpected token {:?}", t), t.span.clone()))
             }
         } else {
-            todo!()
+            Err(self.creat_compiler_error("Unexpected EOF".to_string(), Span::default()))
         }
     }
 
-    fn parse_struct_init(&mut self) -> Result<ExprNode, ParseError> {
-        let name = self.consume(TokenType::Identifier, "expected identifier before struct init.")?;
-        let mut fields: Vec<(String, ExprNode)> = vec![];
-        self.consume(TokenType::LeftBrace, "expected '{'")?;
-        fields.push((
-            self.consume(TokenType::Identifier, "struct must have at least one field initialed")?.literal,
-            self.parse_expression()?
-        ));
-        Ok(ExprNode::new(Expr::StructInit {
-            name: name.literal,
-            fields,
-        }))
-    }
-
-    fn parse_arg_list(&mut self) -> Result<Vec<ExprNode>, ParseError> {
+    fn parse_arg_list(&mut self) -> Result<Vec<ExprNode>, CompilerError<'a>> {
         let mut args: Vec<ExprNode> = vec![];
         args.push(self.parse_expression()?);
-        while let Some(t) = self.matches(TokenType::Comma).cloned() {
+        while let Some(t) = self.matches(TokenType::Comma) {
             args.push(self.parse_expression()?);
         }
         Ok(args)
