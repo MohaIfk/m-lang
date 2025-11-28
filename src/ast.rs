@@ -25,6 +25,13 @@ pub enum Type {
     Fn { params: Vec<Type>, ret: Box<Type> },
 }
 
+
+impl PartialEq for &Type {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
     Neg, Not, Deref, AddressOf, SizeOf

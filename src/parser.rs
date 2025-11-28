@@ -779,7 +779,7 @@ impl<'a> Parser<'a> {
                 _ => self.parse_postfix(),
             }
         } else {
-            todo!()
+            Err(self.creat_compiler_error("Unexpected end of file while parsing expression.".to_string(), Span::default()))
         }
     }
 
@@ -799,8 +799,12 @@ impl<'a> Parser<'a> {
                 TokenType::LeftParen => {
                     self.current += 1;
                     let mut args: Vec<ExprNode> = vec![];
-                    if self.peek_type().unwrap() != TokenType::RightParen {
-                        args = self.parse_arg_list()?;
+                    if let Some(tt) = self.peek_type() {
+                        if tt != TokenType::RightParen {
+                            args = self.parse_arg_list()?;
+                        }
+                    } else {
+                        return Err(self.creat_compiler_error("Unexpected EOF in argument list".to_string(), Span::default()));
                     }
                     let s = self.consume(TokenType::RightParen, "Expected ')' to close attribute argument list.")?.span;
                     Ok(ExprNode::new(Expr::Call {
@@ -843,10 +847,16 @@ impl<'a> Parser<'a> {
         if let Some(t) = self.advance() {
             match t.token_type {
                 TokenType::Int => {
-                    Ok(ExprNode::new(Expr::LiteralInt(t.literal.parse().unwrap()), t.span))
+                    let val = t.literal.parse::<u64>().map_err(|_|
+                        self.creat_compiler_error(format!("Integer literal '{}' is too large", t.literal), t.span)
+                    )?;
+                    Ok(ExprNode::new(Expr::LiteralInt(val), t.span))
                 },
                 TokenType::Float => {
-                    Ok(ExprNode::new(Expr::LiteralFloat(t.literal.parse().unwrap()), t.span))
+                    let val = t.literal.parse::<f64>().map_err(|_|
+                        self.creat_compiler_error(format!("Float literal '{}' is too large", t.literal), t.span)
+                    )?;
+                    Ok(ExprNode::new(Expr::LiteralFloat(val), t.span))
                 },
                 TokenType::String => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
                 TokenType::Char => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
@@ -858,7 +868,7 @@ impl<'a> Parser<'a> {
                         let mut fields: Vec<(String, ExprNode)> = vec![];
                         while let Some(_t) = self.matches(TokenType::Identifier) {
                             self.consume(TokenType::Colon, "Expected ':'")?;
-                            fields.push((_t.literal.clone(), self.parse_primary()?));
+                            fields.push((_t.literal.clone(), self.parse_expression()?));
                             if let None = self.matches(TokenType::Comma) {
                                 break;
                             }

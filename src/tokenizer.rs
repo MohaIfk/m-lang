@@ -311,8 +311,14 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn get_char(&mut self) -> Result<Token, String> {
-        if let Some(_) = self.peek(0) {
+        if let Some(c) = self.peek(0) {
             self.advance();
+            if c == b'\\' {
+                if self.peek(0).is_none() {
+                    return Err("Unexpected EOF".to_string())
+                }
+                self.advance();
+            }
             if let Some(a) = self.peek(0) {
                 self.advance();
                 if a != b'\'' {
