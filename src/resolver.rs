@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::ast::*;
 use crate::error::{ Span, CompilerError };
 use crate::visitor::ASTVisitor;
@@ -82,6 +83,7 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     }
 
     fn visit_fn_decl(&mut self, decl: &mut FnDecl) {
+        let mut param_symbols: HashSet<String> = HashSet::new();
         let fn_ty = Type::Fn {
             params: decl.params.iter().map(|(_, t)| t.clone()).collect(),
             ret: Box::new(decl.return_type.clone()),
@@ -97,6 +99,11 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
         self.symbols.enter_scope();
 
         for (name, ty) in &decl.params {
+            if param_symbols.contains(name) {
+                self.report_error(format!("Param '{}' is already defined in extern function '{}'", name, decl.name), decl.span);
+            } else {
+                param_symbols.insert(name.clone());
+            }
             self.define(name.clone(), Symbol {
                 name: name.clone(),
                 kind: SymbolKind::Var { is_mutable: false },
@@ -111,24 +118,42 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     }
 
     fn visit_struct_decl(&mut self, decl: &mut StructDecl) {
+        let mut field_symbols: HashSet<String> = HashSet::new();
         self.define(decl.name.clone(), Symbol {
             name: decl.name.clone(),
             kind: SymbolKind::Struct,
             ty: Type::Named(decl.name.clone()),
             span: decl.span
         }, decl.span);
+        for (name, _) in &decl.fields {
+            if field_symbols.contains(name) {
+                self.report_error(format!("Field '{}' is already declared in struct '{}'", name, decl.name), decl.span);
+            } else {
+                field_symbols.insert(name.clone());
+            }
+        }
     }
 
     fn visit_enum_decl(&mut self, decl: &mut EnumDecl) {
+        let mut variant_symbols: HashSet<String> = HashSet::new();
         self.define(decl.name.clone(), Symbol {
             name: decl.name.clone(),
             kind: SymbolKind::Enum,
             ty: Type::Named(decl.name.clone()),
             span: decl.span
         }, decl.span);
+        for (name, _) in &decl.variants {
+            if variant_symbols.contains(name) {
+                self.report_error(format!("Variant '{}' is already defined in enum '{}'", name, decl.name), decl.span);
+            } else {
+                variant_symbols.insert(name.clone());
+            }
+        }
     }
 
     fn visit_extern_decl(&mut self, decl: &mut ExternDecl) {
+        let mut param_symbols: HashSet<String> = HashSet::new();
+
         let fn_ty = Type::Fn {
             params: decl.params.iter().map(|(_, t)| t.clone()).collect(),
             ret: Box::new(decl.return_type.clone()),
@@ -139,6 +164,14 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
             ty: fn_ty,
             span: decl.span,
         }, decl.span);
+
+        for (name, _) in &decl.params {
+            if param_symbols.contains(name) {
+                self.report_error(format!("Param '{}' is already defined in extern function '{}'", name, decl.name), decl.span);
+            } else { 
+                param_symbols.insert(name.clone());
+            }
+        }
     }
 
     fn visit_global_decl(&mut self, decl: &mut GlobalDecl) {
@@ -267,7 +300,7 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 self.visit_expr(array);
                 self.visit_expr(index);
             },
-            Expr::StructInit { name, fields, .. } => {
+            Expr::StructInit { name, fields } => {
                 if let Some(sym) = self.symbols.resolve(name) {
                     if SymbolKind::Struct != sym.kind {
                         self.report_error(
@@ -281,7 +314,13 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                         expr.span,
                     );
                 }
-                for (_, e) in fields {
+                let mut field_symbols: HashSet<String> = HashSet::new();
+                for (fname, e) in fields {
+                    if field_symbols.contains(fname) {
+                        self.report_error(format!("Field '{}' is already declared in struct initialization '{}'", fname, name), expr.span);
+                    } else {
+                        field_symbols.insert(fname.clone());
+                    }
                     self.visit_expr(e);
                 }
             },
