@@ -798,8 +798,11 @@ impl<'a> Parser<'a> {
                 },
                 TokenType::LeftParen => {
                     self.current += 1;
-                    let args = self.parse_arg_list()?;
-                    let s = self.consume(TokenType::RightParen, "Expected )")?.span;
+                    let mut args: Vec<ExprNode> = vec![];
+                    if self.peek_type().unwrap() != TokenType::RightParen {
+                        args = self.parse_arg_list()?;
+                    }
+                    let s = self.consume(TokenType::RightParen, "Expected ')' to close attribute argument list.")?.span;
                     Ok(ExprNode::new(Expr::Call {
                         callee: Box::new(expr),
                         args,
