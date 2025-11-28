@@ -101,6 +101,7 @@ pub struct FnDecl {
     pub params: Vec<(String, Type)>,
     pub return_type: Type,
     pub body: Box<StmtNode>,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -113,7 +114,8 @@ pub struct Attribute {
 pub struct StructDecl {
     pub attributes: Vec<Attribute>,
     pub name: String,
-    pub fields: Vec<(String, Type)>
+    pub fields: Vec<(String, Type)>,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -121,6 +123,7 @@ pub struct EnumDecl {
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub variants: Vec<(String, Option<ExprNode>)>,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -131,6 +134,7 @@ pub struct ExternDecl {
     pub params: Vec<(String, Type)>,
     pub return_type: Type,
     pub is_varargs: bool, // TODO: add support for C (printf)
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -140,6 +144,7 @@ pub struct GlobalDecl {
     pub name: String,
     pub ty: Type,
     pub init: Option<ExprNode>,
+    pub span: Span,
 }
 
 

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use crate::ast::*;
+use crate::error::Span;
 
 #[derive(Debug, PartialEq)]
 pub enum SymbolKind {
@@ -14,7 +15,7 @@ pub struct Symbol {
     pub name: String,
     pub kind: SymbolKind,
     pub ty: Type,
-    // pub span: Span,
+    pub span: Span,
 }
 
 pub struct SymbolTable {
@@ -34,10 +35,10 @@ impl SymbolTable {
         self.scopes.pop();
     }
 
-    pub fn define(&mut self, name: String, sym: Symbol) -> Result<(), String> {
+    pub fn define(&mut self, name: String, sym: Symbol) -> Result<(), Span> {
         if let Some(scope) = self.scopes.last_mut() {
-            if scope.contains_key(&name) {
-                return Err(format!("Symbol '{}' already defined in this scope", name));
+            if let Some(prev) = scope.get(&name) {
+                return Err(prev.span);
             }
             scope.insert(name, sym);
             Ok(())

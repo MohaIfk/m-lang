@@ -46,19 +46,22 @@ fn main() {
         println!("Error: {}", r.err().unwrap());
         exit(1);
     }
-    println!("TOKENS: ==================================");
+    println!("TOKENS: ==================================\n");
     for a in tokenizer.get_tokens() {
         println!("token {:?}: {:?}", a.token_type, a.literal);
     }
     let mut parser = Parser::new(tokenizer.get_tokens().clone(), &contents); // TODO: no need to clone
     let b = parser.parse_program();
-    println!("AST: ==================================");
+    println!("AST: ==================================\n");
     if b.is_ok() {
         let mut a = b.unwrap();
         println!("{:?}", a);
-        let mut resolver = SymbolResolver::new();
+        let mut resolver = SymbolResolver::new(&contents);
         resolver.visit_program(&mut a);
-        println!("Symbol resolver errors: {:?}", resolver.errors);
+        println!("Symbol Resolver: ==================================\n");
+        for res_erro in resolver.errors {
+            println!("{}", res_erro);
+        }
     } else {
         print!("{}", b.err().unwrap())
     }

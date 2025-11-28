@@ -91,7 +91,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_top_level(&mut self) -> Result<ItemNode, CompilerError<'a>> {
+    fn parse_top_level(&mut self) -> Result<ItemNode, CompilerError<'a>> {
         let mut attributes: Vec<Attribute> = vec![];
         while let Some(_q) = self.matches(TokenType::At) {
             attributes.push(self.parse_attribute()?);
@@ -144,7 +144,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_extern(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Extern, "Bug")?; // TODO: unreachable!()
+        let mut span = self.consume(TokenType::Extern, "Bug")?.span; // TODO: unreachable!()
         let abi = self.consume(TokenType::String, "Expected ABI string literal (e.g., \"C\") after 'extern'.")?.literal;
         self.consume(TokenType::Fn, "Expected 'fn' keyword after extern ABI.")?;
         let name = self.consume(TokenType::Identifier, "Expected function name after 'fn'.")?.literal;
@@ -155,7 +155,8 @@ impl<'a> Parser<'a> {
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
         }
-        self.consume(TokenType::Semicolon, "Expected ';' after extern function declaration.")?;
+        let span_end = self.consume(TokenType::Semicolon, "Expected ';' after extern function declaration.")?.span;
+        span = Span::sum(span, span_end);
         Ok(Item::Extern( ExternDecl {
             attributes,
             abi,
@@ -163,6 +164,7 @@ impl<'a> Parser<'a> {
             params,
             return_type,
             is_varargs: false,
+            span,
         }))
 
     }
@@ -222,7 +224,7 @@ impl<'a> Parser<'a> {
     // Declarations
 
     fn parse_fn_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Fn, "Expected function declaration")?; // TODO: unreachable!()
+        let mut span = self.consume(TokenType::Fn, "Expected function declaration")?.span; // TODO: unreachable!()
         let name = self.consume(TokenType::Identifier, "Expected function name after 'fn' keyword.")?.literal;
         self.consume(TokenType::LeftParen, "Expected '(' to start function parameter list.")?;
         let mut params = vec![];
@@ -231,18 +233,20 @@ impl<'a> Parser<'a> {
                 params = self.parse_param_list()?;
             }
         }
-        self.consume(TokenType::RightParen, "Expected ')' to end function parameter list.")?;
+        let span_end = self.consume(TokenType::RightParen, "Expected ')' to end function parameter list.")?.span;
         let mut return_type = Type::Void;
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
         }
         let body = self.parse_block()?;
+        span = Span::sum(span, span_end);
         Ok(Item::Function(FnDecl {
             attributes,
             name,
             params,
             return_type,
             body: Box::new(body),
+            span,
         }))
     }
 
@@ -263,17 +267,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_struct_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Struct, "Expected struct declaration")?; // TODO: unreachable!()
+        let mut span = self.consume(TokenType::Struct, "Expected struct declaration")?.span; // TODO: unreachable!()
         let name = self.consume(TokenType::Identifier, "Expected struct name after 'struct' keyword.")?.literal;
-        self.consume(TokenType::LeftBrace, "Expected '{' to begin struct body.")?;
+        let span_end = self.consume(TokenType::LeftBrace, "Expected '{' to begin struct body.")?.span;
         let mut fields: Vec<(String, Type)> = vec![];
         while let None = self.matches(TokenType::RightBrace) {
             fields.push(self.parse_struct_field()?);
         }
+        span = Span::sum(span, span_end);
         Ok(Item::Struct(StructDecl {
             attributes,
             name,
             fields,
+            span
         }))
     }
 
@@ -286,9 +292,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_enum_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        self.consume(TokenType::Enum, "Expected enum declaration")?; // TODO: unreachable!()
+        let mut span = self.consume(TokenType::Enum, "Expected enum declaration")?.span; // TODO: unreachable!()
         let name = self.consume(TokenType::Identifier, "Expected enum name after 'enum' keyword.")?.literal;
-        self.consume(TokenType::LeftBrace, "Expected {")?;
+        let span_end = self.consume(TokenType::LeftBrace, "Expected {")?.span;
         let mut variants: Vec<(String, Option<ExprNode>)> = vec![];
         variants.push(self.parse_enum_item()?);
         while let Some(_) = self.matches(TokenType::Comma) {
@@ -298,10 +304,12 @@ impl<'a> Parser<'a> {
             variants.push(self.parse_enum_item()?);
         }
         self.consume(TokenType::RightBrace, "Expected '}' to end enum body.")?;
+        span = Span::sum(span, span_end);
         Ok(Item::Enum(EnumDecl {
             attributes,
             name,
             variants,
+            span,
         }))
     }
 
@@ -316,7 +324,9 @@ impl<'a> Parser<'a> {
 
     fn parse_global_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
         let mut is_const = false;
+        let mut span;
         if let Some(t) = self.peek(0) {
+            span = t.span;
             is_const = match t.token_type {
                 TokenType::Const => true,
                 TokenType::Var => true,
@@ -335,13 +345,15 @@ impl<'a> Parser<'a> {
         if let Some(_) = self.matches(TokenType::Equal) {
             init = Some(self.parse_expression()?);
         }
-        self.consume(TokenType::Semicolon, "Expected ';' after global variable declaration.")?;
+        let span_end = self.consume(TokenType::Semicolon, "Expected ';' after global variable declaration.")?.span;
+        span = Span::sum(span, span_end);
         Ok(Item::Global(GlobalDecl {
             attributes,
             name,
             ty,
             init,
             is_const,
+            span
         }))
     }
 
