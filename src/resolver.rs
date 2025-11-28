@@ -9,6 +9,7 @@ pub struct SymbolResolver<'a> {
     pub errors: Vec<CompilerError<'a>>,
     pub source: &'a String,
     pub in_loop: bool,
+    pub is_assigment_target: bool,
 }
 
 impl<'a> SymbolResolver<'a> {
@@ -18,6 +19,7 @@ impl<'a> SymbolResolver<'a> {
             errors: vec![],
             source,
             in_loop: false,
+            is_assigment_target: false,
         }
     }
 
@@ -123,7 +125,7 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
             name: decl.name.clone(),
             kind: SymbolKind::Struct,
             ty: Type::Named(decl.name.clone()),
-            span: decl.span
+            span: decl.span,
         }, decl.span);
         for (name, _) in &decl.fields {
             if field_symbols.contains(name) {
@@ -140,7 +142,7 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
             name: decl.name.clone(),
             kind: SymbolKind::Enum,
             ty: Type::Named(decl.name.clone()),
-            span: decl.span
+            span: decl.span,
         }, decl.span);
         for (name, _) in &decl.variants {
             if variant_symbols.contains(name) {
@@ -168,7 +170,7 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
         for (name, _) in &decl.params {
             if param_symbols.contains(name) {
                 self.report_error(format!("Param '{}' is already defined in extern function '{}'", name, decl.name), decl.span);
-            } else { 
+            } else {
                 param_symbols.insert(name.clone());
             }
         }
@@ -209,20 +211,10 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 }, stmt.span);
             },
             Stmt::Assign { target, value } => {
-                self.visit_expr(value);
-                if let Expr::Identifier(name) = &target.kind {
-                    if let Some(sym) = self.symbols.resolve(name) {
-                        if let SymbolKind::Var { is_mutable } = sym.kind {
-                            if !is_mutable {
-                                self.report_error(
-                                    format!("Cannot assign to immutable variable '{}'", name),
-                                    target.span
-                                );
-                            }
-                        }
-                    }
-                }
+                self.is_assigment_target = true;
                 self.visit_expr(target);
+                self.is_assigment_target = false;
+                self.visit_expr(value);
             },
             Stmt::If { condition, then_branch, else_branch } => {
                 self.visit_expr(condition);
@@ -273,9 +265,22 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     fn visit_expr(&mut self, expr: &mut ExprNode) {
         match &mut expr.kind {
             Expr::Identifier(name) => {
-                if let None = self.symbols.resolve(name) {
+                if let Some(sym) = self.symbols.resolve(name) {
+                    if self.is_assigment_target {
+                        if let SymbolKind::Var { is_mutable } = sym.kind {
+                            if !is_mutable {
+                                self.report_error(
+                                    format!("Cannot assign to immutable variable '{}'. Use 'var' instead of 'let'", name),
+                                    expr.span
+                                );
+                            }
+                        } else {
+                            self.report_error(format!("Cannot assign to '{}' it's not a variable", name), expr.span);
+                        }
+                    }
+                } else {
                     self.report_error(
-                        format!("Undefined symbol '{}'", name),
+                        format!("Undefined variable '{}'", name),
                         expr.span,
                     );
                 }
@@ -293,12 +298,26 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                     self.visit_expr(arg);
                 }
             },
-            Expr::MemberAccess { object, .. } => {
-                self.visit_expr(object);
+            Expr::MemberAccess { object, is_arrow, .. } => {
+                if self.is_assigment_target {
+                    if *is_arrow {
+                        let was_target = self.is_assigment_target;
+                        self.is_assigment_target = false;
+                        self.visit_expr(object);
+                        self.is_assigment_target = was_target;
+                    } else {
+                        self.visit_expr(object);
+                    }
+                } else {
+                    self.visit_expr(object);
+                }
             },
             Expr::Index { array, index } => {
                 self.visit_expr(array);
+                let was_target = self.is_assigment_target;
+                self.is_assigment_target = false;
                 self.visit_expr(index);
+                self.is_assigment_target = was_target;
             },
             Expr::StructInit { name, fields } => {
                 if let Some(sym) = self.symbols.resolve(name) {
