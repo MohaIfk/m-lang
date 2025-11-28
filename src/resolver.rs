@@ -7,6 +7,7 @@ pub struct SymbolResolver<'a> {
     pub symbols: SymbolTable,
     pub errors: Vec<CompilerError<'a>>,
     pub source: &'a String,
+    pub in_loop: bool,
 }
 
 impl<'a> SymbolResolver<'a> {
@@ -15,6 +16,7 @@ impl<'a> SymbolResolver<'a> {
             symbols: SymbolTable::new(),
             errors: vec![],
             source,
+            in_loop: false,
         }
     }
 
@@ -198,7 +200,10 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
             },
             Stmt::While { condition, body } => {
                 self.visit_expr(condition);
+                let in_loop = self.in_loop;
+                self.in_loop = true;
                 self.visit_stmt(body);
+                self.in_loop = in_loop;
             },
             Stmt::For { init, condition, update, body } => {
                 self.symbols.enter_scope();
@@ -207,7 +212,10 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 if let Some(c) = condition { self.visit_expr(c); }
                 if let Some(u) = update { self.visit_stmt(u); }
 
+                let in_loop = self.in_loop;
+                self.in_loop = true;
                 self.visit_stmt(body);
+                self.in_loop = in_loop;
 
                 self.symbols.exit_scope();
             },
@@ -215,6 +223,16 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 if let Some(e) = opt_e { self.visit_expr(e); }
             },
             Stmt::Expression(e) => { self.visit_expr(e); },
+            Stmt::Break => {
+                if !self.in_loop {
+                    self.report_error("break statement used outside of a loop".to_string(), stmt.span);
+                }
+            },
+            Stmt::Continue => {
+                if !self.in_loop {
+                    self.report_error("continue statement used outside of a loop".to_string(), stmt.span);
+                }
+            },
             _ => {}
         }
     }
