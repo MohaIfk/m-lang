@@ -323,7 +323,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_global_decl(&mut self, attributes: Vec<Attribute>) -> Result<Item, CompilerError<'a>> {
-        let mut is_const = false;
+        let mut is_const: bool;
         let mut span;
         if let Some(t) = self.peek(0) {
             span = t.span;
@@ -396,7 +396,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_var_decl_clause(&mut self) -> Result<StmtNode, CompilerError<'a>> {
-        let mut is_mutable: bool = false;
+        let mut is_mutable: bool;
         if let Some(t) = self.peek(0) {
             is_mutable = match t.token_type {
                 TokenType::Let => false,
@@ -564,7 +564,7 @@ impl<'a> Parser<'a> {
 
     fn parse_logical_or(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_logical_and()?;
-        while let Some(t) = self.matches(TokenType::PipePipe) {
+        while let Some(_) = self.matches(TokenType::PipePipe) {
             let rhs = self.parse_logical_and()?;
             let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
@@ -578,7 +578,7 @@ impl<'a> Parser<'a> {
 
     fn parse_logical_and(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_equality()?;
-        while let Some(t) = self.matches(TokenType::AmpersandAmpersand) {
+        while let Some(_) = self.matches(TokenType::AmpersandAmpersand) {
             let rhs = self.parse_equality()?;
             let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
@@ -627,7 +627,7 @@ impl<'a> Parser<'a> {
 
     fn parse_bitwise_or(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_bitwise_xor()?;
-        while let Some(t) = self.matches(TokenType::Pipe) {
+        while let Some(_) = self.matches(TokenType::Pipe) {
             let rhs = self.parse_bitwise_xor()?;
             let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
@@ -641,7 +641,7 @@ impl<'a> Parser<'a> {
 
     fn parse_bitwise_xor(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_bitwise_and()?;
-        while let Some(t) = self.matches(TokenType::Caret) {
+        while let Some(_) = self.matches(TokenType::Caret) {
             let rhs = self.parse_bitwise_and()?;
             let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
@@ -655,7 +655,7 @@ impl<'a> Parser<'a> {
 
     fn parse_bitwise_and(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let mut expr = self.parse_shift()?;
-        while let Some(t) = self.matches(TokenType::Ampersand) {
+        while let Some(_) = self.matches(TokenType::Ampersand) {
             let rhs = self.parse_shift()?;
             let span = Span::sum(expr.span, rhs.span);
             expr = ExprNode::new(Expr::Binary {
@@ -717,7 +717,7 @@ impl<'a> Parser<'a> {
 
     fn parse_cast(&mut self) -> Result<ExprNode, CompilerError<'a>> {
         let expr = self.parse_unary()?;
-        if let Some(t) = self.matches(TokenType::As) {
+        if let Some(_) = self.matches(TokenType::As) {
             let target = self.parse_type()?;
             let span = Span::sum(expr.span, self.previous().unwrap().span);
             Ok(ExprNode::new(Expr::Cast {
@@ -773,8 +773,8 @@ impl<'a> Parser<'a> {
                     } else {
                         target = SizeOfTarget::Type(ty?);
                     }
-                    let spana = self.consume(TokenType::RightParen, "Expected ')' after 'sizeof' argument.")?.span;
-                    Ok(ExprNode::new(Expr::SizeOf { target }, Span::sum(t.span, spana)))
+                    let span_end = self.consume(TokenType::RightParen, "Expected ')' after 'sizeof' argument.")?.span;
+                    Ok(ExprNode::new(Expr::SizeOf { target }, Span::sum(t.span, span_end)))
                 },
                 _ => self.parse_postfix(),
             }
@@ -897,7 +897,7 @@ impl<'a> Parser<'a> {
     fn parse_arg_list(&mut self) -> Result<Vec<ExprNode>, CompilerError<'a>> {
         let mut args: Vec<ExprNode> = vec![];
         args.push(self.parse_expression()?);
-        while let Some(t) = self.matches(TokenType::Comma) {
+        while let Some(_) = self.matches(TokenType::Comma) {
             args.push(self.parse_expression()?);
         }
         Ok(args)
