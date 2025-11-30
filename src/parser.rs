@@ -178,6 +178,7 @@ impl<'a> Parser<'a> {
                 TokenType::U32 => Ok(TypeSpec::U32),
                 TokenType::U64 => Ok(TypeSpec::U64),
                 TokenType::I8 => Ok(TypeSpec::I8),
+                TokenType::I16 => Ok(TypeSpec::I16),
                 TokenType::I32 => Ok(TypeSpec::I32),
                 TokenType::I64 => Ok(TypeSpec::I64),
                 TokenType::F32 => Ok(TypeSpec::F32),
