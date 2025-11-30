@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
         self.consume(TokenType::LeftParen, "Expected '(' to start parameter list.")?;
         let params = self.parse_param_list()?;
         self.consume(TokenType::RightParen, "Expected ')' to end parameter list.")?;
-        let mut return_type = Type::Void;
+        let mut return_type = TypeSpec::Void;
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
         }
@@ -170,37 +170,37 @@ impl<'a> Parser<'a> {
     }
 
     // Types
-    fn parse_type(&mut self) -> Result<Type, CompilerError<'a>> {
+    fn parse_type(&mut self) -> Result<TypeSpec, CompilerError<'a>> {
         if let Some(t) = self.advance() {
             match t.token_type {
-                TokenType::U8 => Ok(Type::U8),
-                TokenType::U16 => Ok(Type::U16),
-                TokenType::U32 => Ok(Type::U32),
-                TokenType::U64 => Ok(Type::U64),
-                TokenType::I8 => Ok(Type::I8),
-                TokenType::I32 => Ok(Type::I32),
-                TokenType::I64 => Ok(Type::I64),
-                TokenType::F32 => Ok(Type::F32),
-                TokenType::F64 => Ok(Type::F64),
-                TokenType::CHAR => Ok(Type::CHAR),
-                TokenType::Void => Ok(Type::Void),
-                TokenType::BOOL => Ok(Type::BOOL),
-                TokenType::Identifier => Ok(Type::Named(t.literal.clone())),
-                TokenType::Star => Ok(Type::Pointer(Box::new(self.parse_type()?))),
+                TokenType::U8 => Ok(TypeSpec::U8),
+                TokenType::U16 => Ok(TypeSpec::U16),
+                TokenType::U32 => Ok(TypeSpec::U32),
+                TokenType::U64 => Ok(TypeSpec::U64),
+                TokenType::I8 => Ok(TypeSpec::I8),
+                TokenType::I32 => Ok(TypeSpec::I32),
+                TokenType::I64 => Ok(TypeSpec::I64),
+                TokenType::F32 => Ok(TypeSpec::F32),
+                TokenType::F64 => Ok(TypeSpec::F64),
+                TokenType::CHAR => Ok(TypeSpec::CHAR),
+                TokenType::Void => Ok(TypeSpec::Void),
+                TokenType::BOOL => Ok(TypeSpec::BOOL),
+                TokenType::Identifier => Ok(TypeSpec::Named(t.literal.clone())),
+                TokenType::Star => Ok(TypeSpec::Pointer(Box::new(self.parse_type()?))),
                 TokenType::LeftBracket => {
                     let expr = self.parse_expression()?;
                     self.consume(TokenType::RightBracket, "Expected ']' to close array type dimension.")?;
-                    let a = Type::Array(Box::new(self.parse_type()?), Box::new(expr));
+                    let a = TypeSpec::Array(Box::new(self.parse_type()?), Box::new(expr));
                     Ok(a)
                 },
                 TokenType::Fn => {
                     self.consume(TokenType::LeftParen, "Expected '(' to start function type parameter list.")?;
                     let params = self.parse_type_list()?;
-                    let mut return_type = Type::Void;
+                    let mut return_type = TypeSpec::Void;
                     if let Some(_) = self.matches(TokenType::Arrow) {
                         return_type = self.parse_type()?;
                     }
-                    Ok(Type::Fn {
+                    Ok(TypeSpec::Fn {
                         params,
                         ret: Box::new(return_type),
                     })
@@ -212,8 +212,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type_list(&mut self) -> Result<Vec<Type>, CompilerError<'a>> {
-        let mut types: Vec<Type> = vec![];
+    fn parse_type_list(&mut self) -> Result<Vec<TypeSpec>, CompilerError<'a>> {
+        let mut types: Vec<TypeSpec> = vec![];
         types.push(self.parse_type()?);
         while let Some(_) = self.matches(TokenType::Comma) {
             types.push(self.parse_type()?);
@@ -234,7 +234,7 @@ impl<'a> Parser<'a> {
             }
         }
         let span_end = self.consume(TokenType::RightParen, "Expected ')' to end function parameter list.")?.span;
-        let mut return_type = Type::Void;
+        let mut return_type = TypeSpec::Void;
         if let Some(_) = self.matches(TokenType::Arrow) {
             return_type = self.parse_type()?;
         }
@@ -247,11 +247,12 @@ impl<'a> Parser<'a> {
             return_type,
             body: Box::new(body),
             span,
+            scope_id: None,
         }))
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<(String, Type)>, CompilerError<'a>> {
-        let mut params: Vec<(String, Type)> = vec![];
+    fn parse_param_list(&mut self) -> Result<Vec<(String, TypeSpec)>, CompilerError<'a>> {
+        let mut params: Vec<(String, TypeSpec)> = vec![];
         params.push(self.parse_param()?);
         while let Some(_) = self.matches(TokenType::Comma) {
             params.push(self.parse_param()?);
@@ -259,7 +260,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    fn parse_param(&mut self) -> Result<(String, Type), CompilerError<'a>> {
+    fn parse_param(&mut self) -> Result<(String, TypeSpec), CompilerError<'a>> {
         let name = self.consume(TokenType::Identifier, "Expected parameter name.")?.literal;
         self.consume(TokenType::Colon, "Expected ':' after name.")?;
         let ty = self.parse_type()?;
@@ -270,7 +271,7 @@ impl<'a> Parser<'a> {
         let mut span = self.consume(TokenType::Struct, "Expected struct declaration")?.span; // TODO: unreachable!()
         let name = self.consume(TokenType::Identifier, "Expected struct name after 'struct' keyword.")?.literal;
         let span_end = self.consume(TokenType::LeftBrace, "Expected '{' to begin struct body.")?.span;
-        let mut fields: Vec<(String, Type)> = vec![];
+        let mut fields: Vec<(String, TypeSpec)> = vec![];
         while let None = self.matches(TokenType::RightBrace) {
             fields.push(self.parse_struct_field()?);
         }
@@ -283,7 +284,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_struct_field(&mut self) -> Result<(String, Type), CompilerError<'a>> {
+    fn parse_struct_field(&mut self) -> Result<(String, TypeSpec), CompilerError<'a>> {
         let name = self.consume(TokenType::Identifier, "Expected field name.")?.literal;
         self.consume(TokenType::Colon, "Expected ':' after name.")?;
         let ty = self.parse_type()?;
@@ -367,7 +368,7 @@ impl<'a> Parser<'a> {
         if let Some(stmt) = stmts.last() {
             span = Span::sum(span, stmt.span);
         }
-        Ok(StmtNode::new(Stmt::Block(stmts), span))
+        Ok(StmtNode::new(Stmt::Block(stmts, None), span))
     }
 
     fn parse_statement(&mut self) -> Result<StmtNode, CompilerError<'a>> {
@@ -543,7 +544,8 @@ impl<'a> Parser<'a> {
             condition,
             update,
             body: Box::new(body),
-        },span))
+            scope_id: None,
+        }, span))
     }
 
     fn parse_return_stmt(&mut self) -> Result<StmtNode, CompilerError<'a>> {

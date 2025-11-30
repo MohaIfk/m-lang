@@ -1,4 +1,5 @@
 use crate::error::Span;
+use crate::symbols::ScopeId;
 
 #[derive(Debug, Clone)]
 pub struct Node<T> {
@@ -13,23 +14,31 @@ impl<T> Node<T> {
     }
 }
 
+// Syntactic Types
 #[derive(Debug, Clone)]
-pub enum Type {
+pub enum TypeSpec {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
     U8, U16, U32, U64,
     Void,
     Named(String),
-    Pointer(Box<Type>),
-    Array(Box<Type>, Box<ExprNode>),
-    Fn { params: Vec<Type>, ret: Box<Type> },
+    Pointer(Box<TypeSpec>),
+    Array(Box<TypeSpec>, Box<ExprNode>),
+    Fn { params: Vec<TypeSpec>, ret: Box<TypeSpec> },
 }
 
-
-impl PartialEq for &Type {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
-    }
+// Semantic Types
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Type {
+    F32, F64, BOOL, CHAR,
+    I8, I16, I32, I64,
+    U8, U16, U32, U64,
+    Struct(String),
+    Pointer(Box<Type>),
+    Array(Box<Type>, u32),
+    Fn { params: Vec<Type>, ret: Box<Type> },
+    Void,
+    Error, // for type checker to mark error
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +56,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum SizeOfTarget {
-    Type(Type),
+    Type(TypeSpec),
     Expr(Box<ExprNode>),
 }
 
@@ -66,7 +75,7 @@ pub enum Expr {
 
     Binary { lhs: Box<ExprNode>, op: BinaryOp, rhs: Box<ExprNode> },
     Unary { op: UnaryOp, rhs: Box<ExprNode> },
-    Cast { expr: Box<ExprNode>, target: Type },
+    Cast { expr: Box<ExprNode>, target: TypeSpec },
     Call { callee: Box<ExprNode>, args: Vec<ExprNode> },
     MemberAccess { object: Box<ExprNode>, member: String, is_arrow: bool },
     Index { array: Box<ExprNode>, index: Box<ExprNode> },
@@ -79,10 +88,10 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     // {...}
-    Block(Vec<StmtNode>),
+    Block(Vec<StmtNode>, Option<ScopeId>),
 
     // let x: i32 = 5;
-    VarDecl{ is_mutable: bool, name: String, ty: Type, init: Option<ExprNode> },
+    VarDecl{ is_mutable: bool, name: String, ty: TypeSpec, init: Option<ExprNode> },
 
     // x = 5;
     Assign{ target: ExprNode, value: ExprNode },
@@ -91,7 +100,7 @@ pub enum Stmt {
 
     While { condition: ExprNode, body: Box<StmtNode> },
 
-    For { init: Option<Box<StmtNode>>, condition: Option<ExprNode>, update: Option<Box<StmtNode>>, body: Box<StmtNode> },
+    For { init: Option<Box<StmtNode>>, condition: Option<ExprNode>, update: Option<Box<StmtNode>>, body: Box<StmtNode>, scope_id: Option<ScopeId> },
 
     Return(Option<ExprNode>),
     Break,
@@ -105,10 +114,11 @@ pub enum Stmt {
 pub struct FnDecl {
     pub attributes: Vec<Attribute>,
     pub name: String,
-    pub params: Vec<(String, Type)>,
-    pub return_type: Type,
+    pub params: Vec<(String, TypeSpec)>,
+    pub return_type: TypeSpec,
     pub body: Box<StmtNode>,
     pub span: Span,
+    pub scope_id: Option<ScopeId>,
 }
 
 #[derive(Debug)]
@@ -121,7 +131,7 @@ pub struct Attribute {
 pub struct StructDecl {
     pub attributes: Vec<Attribute>,
     pub name: String,
-    pub fields: Vec<(String, Type)>,
+    pub fields: Vec<(String, TypeSpec)>,
     pub span: Span,
 }
 
@@ -138,8 +148,8 @@ pub struct ExternDecl {
     pub attributes: Vec<Attribute>,
     pub abi: String,
     pub name: String,
-    pub params: Vec<(String, Type)>,
-    pub return_type: Type,
+    pub params: Vec<(String, TypeSpec)>,
+    pub return_type: TypeSpec,
     pub is_varargs: bool, // TODO: add support for C (printf)
     pub span: Span,
 }
@@ -149,7 +159,7 @@ pub struct GlobalDecl {
     pub attributes: Vec<Attribute>,
     pub is_const: bool,
     pub name: String,
-    pub ty: Type,
+    pub ty: TypeSpec,
     pub init: Option<ExprNode>,
     pub span: Span,
 }
