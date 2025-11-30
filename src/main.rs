@@ -18,7 +18,7 @@ use crate::tokenizer::Tokenizer;
 use crate::visitor::ASTVisitor;
 
 fn main() {
-    // first lets get args
+    // first let's get args
     let argv = env::args();
     let args = argv.len();
     let filename: String;
@@ -59,9 +59,14 @@ fn main() {
         let mut resolver = SymbolResolver::new(&contents);
         resolver.visit_program(&mut a);
         println!("Symbol Resolver: ==================================\n");
-        for res_erro in resolver.errors {
-            println!("{}", res_erro);
+        if !resolver.errors.is_empty() {
+            for res_erro in resolver.errors {
+                println!("{}", res_erro);
+            }
+            return;
         }
+        println!("{:?}", resolver.symbols);
+        println!("Type Checker: ==================================\n");
     } else {
         print!("{}", b.err().unwrap())
     }

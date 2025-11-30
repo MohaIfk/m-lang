@@ -36,26 +36,29 @@ impl<'a> SymbolResolver<'a> {
         }
     }
 
-    fn resolve_type(&mut self, ty: & mut Type, span: Span) {
+    fn resolve_type(&mut self, ty: & mut TypeSpec, span: Span) {
         match &ty {
-            Type::Named(name) => {
-                match self.symbols.resolve(name) {
-                    Some(sym) => match &sym.kind {
-                        SymbolKind::Fn => self.report_error(format!("Cannot use function as a type: '{}'", name), span),
-                        SymbolKind::Var { is_mutable: _ } => self.report_error(format!("Cannot use variable name as a type: '{}'", name), span),
-                        SymbolKind::Enum | SymbolKind::Struct  => {}
+            TypeSpec::Named(name) => {
+                match self.symbols.resolve(name.clone()) {
+                    Some(sym_id) => {
+                        let sym = self.symbols.get_symbol(sym_id);
+                        match sym.kind {
+                            SymbolKind::Fn => self.report_error(format!("Cannot use function as a type: '{}'", name), span),
+                            SymbolKind::Var { is_mutable: _ } => self.report_error(format!("Cannot use variable name as a type: '{}'", name), span),
+                            SymbolKind::Enum | SymbolKind::Struct  => {}
+                        }
                     },
                     None => self.report_error(format!("Unknown type '{:?}'", ty), span)
                 }
             },
-            Type::Pointer(pty) => {
+            TypeSpec::Pointer(pty) => {
                 self.resolve_type(&mut *pty.clone(), span);
             },
-            Type::Array(pty, expr) => {
+            TypeSpec::Array(pty, expr) => {
                 self.resolve_type(&mut *pty.clone(), span);
                 self.visit_expr(&mut *expr.clone());
             },
-            Type::Fn { params, ret } => {
+            TypeSpec::Fn { params, ret } => {
                 for param in params {
                     self.resolve_type(&mut param.clone(), span);
                 }
@@ -86,19 +89,21 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
 
     fn visit_fn_decl(&mut self, decl: &mut FnDecl) {
         let mut param_symbols: HashSet<String> = HashSet::new();
-        let fn_ty = Type::Fn {
+        let fn_ty = TypeSpec::Fn {
             params: decl.params.iter().map(|(_, t)| t.clone()).collect(),
             ret: Box::new(decl.return_type.clone()),
         };
 
         self.define(decl.name.clone(), Symbol {
+            id: 0,
             name: decl.name.clone(),
             kind: SymbolKind::Fn,
             ty: fn_ty,
             span: decl.span,
+            is_initialized: true,
         }, decl.span);
 
-        self.symbols.enter_scope();
+        decl.scope_id = Some(self.symbols.enter_scope());
 
         for (name, ty) in &decl.params {
             if param_symbols.contains(name) {
@@ -107,10 +112,12 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 param_symbols.insert(name.clone());
             }
             self.define(name.clone(), Symbol {
+                id: 0,
                 name: name.clone(),
                 kind: SymbolKind::Var { is_mutable: false },
                 ty: ty.clone(),
                 span: decl.span,
+                is_initialized: true,
             }, decl.span);
         }
 
@@ -122,10 +129,12 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     fn visit_struct_decl(&mut self, decl: &mut StructDecl) {
         let mut field_symbols: HashSet<String> = HashSet::new();
         self.define(decl.name.clone(), Symbol {
+            id: 0,
             name: decl.name.clone(),
             kind: SymbolKind::Struct,
-            ty: Type::Named(decl.name.clone()),
+            ty: TypeSpec::Named(decl.name.clone()),
             span: decl.span,
+            is_initialized: true,
         }, decl.span);
         for (name, _) in &decl.fields {
             if field_symbols.contains(name) {
@@ -139,10 +148,12 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     fn visit_enum_decl(&mut self, decl: &mut EnumDecl) {
         let mut variant_symbols: HashSet<String> = HashSet::new();
         self.define(decl.name.clone(), Symbol {
+            id: 0,
             name: decl.name.clone(),
             kind: SymbolKind::Enum,
-            ty: Type::Named(decl.name.clone()),
+            ty: TypeSpec::Named(decl.name.clone()),
             span: decl.span,
+            is_initialized: true,
         }, decl.span);
         for (name, _) in &decl.variants {
             if variant_symbols.contains(name) {
@@ -156,15 +167,17 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     fn visit_extern_decl(&mut self, decl: &mut ExternDecl) {
         let mut param_symbols: HashSet<String> = HashSet::new();
 
-        let fn_ty = Type::Fn {
+        let fn_ty = TypeSpec::Fn {
             params: decl.params.iter().map(|(_, t)| t.clone()).collect(),
             ret: Box::new(decl.return_type.clone()),
         };
         self.define(decl.name.clone(), Symbol {
+            id: 0,
             name: decl.name.clone(),
             kind: SymbolKind::Fn,
             ty: fn_ty,
             span: decl.span,
+            is_initialized: false,
         }, decl.span);
 
         for (name, _) in &decl.params {
@@ -178,10 +191,12 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
 
     fn visit_global_decl(&mut self, decl: &mut GlobalDecl) {
         self.define(decl.name.clone(), Symbol {
+            id: 0,
             name: decl.name.clone(),
             kind: SymbolKind::Var { is_mutable: !decl.is_const },
             ty: decl.ty.clone(),
             span: decl.span,
+            is_initialized: decl.init.is_some(),
         }, decl.span);
 
         if let Some(init) = &mut decl.init {
@@ -191,8 +206,8 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
 
     fn visit_stmt(&mut self, stmt: &mut StmtNode) {
         match &mut stmt.kind {
-            Stmt::Block(stmts) => {
-                self.symbols.enter_scope();
+            Stmt::Block(stmts, scope_id) => {
+                *scope_id = Some(self.symbols.enter_scope());
                 for s in stmts {
                     self.visit_stmt(s);
                 }
@@ -204,10 +219,12 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                     self.visit_expr(expr);
                 }
                 self.define(name.clone(), Symbol {
+                    id: 0,
                     name: name.clone(),
                     kind: SymbolKind::Var { is_mutable: *is_mutable },
                     ty: ty.clone(),
                     span: stmt.span,
+                    is_initialized: init.is_none(),
                 }, stmt.span);
             },
             Stmt::Assign { target, value } => {
@@ -230,8 +247,8 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 self.visit_stmt(body);
                 self.in_loop = in_loop;
             },
-            Stmt::For { init, condition, update, body } => {
-                self.symbols.enter_scope();
+            Stmt::For { init, condition, update, body, scope_id } => {
+                *scope_id = Some(self.symbols.enter_scope());
 
                 if let Some(i) = init { self.visit_stmt(i); }
                 if let Some(c) = condition { self.visit_expr(c); }
@@ -265,7 +282,8 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
     fn visit_expr(&mut self, expr: &mut ExprNode) {
         match &mut expr.kind {
             Expr::Identifier(name) => {
-                if let Some(sym) = self.symbols.resolve(name) {
+                if let Some(sym_id) = self.symbols.resolve(name.clone()) {
+                    let sym = self.symbols.get_symbol(sym_id);
                     if self.is_assigment_target {
                         if let SymbolKind::Var { is_mutable } = sym.kind {
                             if !is_mutable {
@@ -320,7 +338,8 @@ impl<'a> ASTVisitor<()> for SymbolResolver<'a> {
                 self.is_assigment_target = was_target;
             },
             Expr::StructInit { name, fields } => {
-                if let Some(sym) = self.symbols.resolve(name) {
+                if let Some(sym_id) = self.symbols.resolve(name.clone()) {
+                    let sym = self.symbols.get_symbol(sym_id);
                     if SymbolKind::Struct != sym.kind {
                         self.report_error(
                             format!("Undefined struct '{}'", name), // TODO: better message
