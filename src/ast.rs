@@ -28,22 +28,88 @@ pub enum TypeSpec {
 }
 
 // Semantic Types
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
     U8, U16, U32, U64,
+    Named(String),
     Struct(String),
+    Enum(String),
     Pointer(Box<Type>),
-    Array(Box<Type>, u32),
+    Array(Box<Type>, u64),
     Fn { params: Vec<Type>, ret: Box<Type> },
     Void,
     Error, // for type checker to mark error
 }
 
+pub enum CastSafety {
+    Safe,
+    Lossy,
+    SignMismatch,
+    Forbidden,
+}
+
+impl Type {
+    pub fn size_in_bytes(&self) -> u8 {
+        use Type::*;
+        match self {
+            U8 | I8 | BOOL | CHAR => 1,
+            U16 | I16 => 2,
+            U32 | I32 | F32 => 4,
+            U64 | I64 | F64 => 8,
+            _ => 0,
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        use Type::*;
+        matches!(self, F32|F64|I8|I16|I32|I64|U8|U16|U32|U64)
+    }
+
+    pub fn can_cast_to(&self, target: &Type) -> bool {
+        use Type::*;
+        match (self, target) {
+            (t1, t2) if t1.is_numeric() && t2.is_numeric() => true,
+            (Pointer(_), U64) => true,
+            (U64, Pointer(_)) => true,
+            (Pointer(_), Pointer(_)) => true,
+            _ => false
+        }
+    }
+
+    pub fn check_cast_safety(&self, target: &Type) -> CastSafety {
+        if self == target { return CastSafety::Safe; }
+
+        if self.is_numeric() && target.is_numeric() {
+            let src_size = self.size_in_bytes();
+            let dest_size = target.size_in_bytes();
+
+            let src_signed = matches!(self, Type::I8 | Type::I16 | Type::I32 | Type::I64);
+            let dest_signed = matches!(target, Type::I8 | Type::I16 | Type::I32 | Type::I64);
+
+            if src_signed != dest_signed {
+                return CastSafety::SignMismatch;
+            }
+
+            if dest_size < src_size {
+                return CastSafety::Lossy;
+            }
+
+            return CastSafety::Safe;
+        }
+
+        CastSafety::Forbidden
+    }
+
+    pub fn is_void(&self) -> bool {
+        matches!(self, Type::Void)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryOp {
-    Neg, Not, Deref, AddressOf, SizeOf
+    Neg, Not, Deref, AddressOf
 }
 
 #[derive(Debug, Clone, Copy)]

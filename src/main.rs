@@ -7,6 +7,9 @@ mod resolver;
 mod type_checker;
 mod visitor;
 mod error;
+mod type_registry;
+mod type_collector;
+mod type_resolver;
 
 use std::env;
 use std::process::exit;
@@ -16,6 +19,8 @@ use crate::parser::Parser;
 use crate::resolver::SymbolResolver;
 use crate::tokenizer::Tokenizer;
 use crate::visitor::ASTVisitor;
+use crate::type_checker::TypeChecker;
+use crate::type_collector::TypeCollector;
 
 fn main() {
     // first let's get args
@@ -46,27 +51,45 @@ fn main() {
         println!("Error: {}", r.err().unwrap());
         exit(1);
     }
-    println!("TOKENS: ==================================\n");
-    for a in tokenizer.get_tokens() {
-        println!("token {:?}: {:?}", a.token_type, a.literal);
-    }
+    //println!("TOKENS: ==================================\n");
+    //for a in tokenizer.get_tokens() {
+    //    println!("token {:?}: {:?}", a.token_type, a.literal);
+    //}
     let mut parser = Parser::new(tokenizer.get_tokens().clone(), &contents); // TODO: no need to clone
     let b = parser.parse_program();
-    println!("AST: ==================================\n");
+    println!("Parser: ==================================\n");
     if b.is_ok() {
         let mut a = b.unwrap();
         println!("{:?}", a);
         let mut resolver = SymbolResolver::new(&contents);
         resolver.visit_program(&mut a);
-        println!("Symbol Resolver: ==================================\n");
+        println!("Symbol Resolver AST+Symbols: ==================================\n");
         if !resolver.errors.is_empty() {
             for res_erro in resolver.errors {
                 println!("{}", res_erro);
             }
             return;
         }
-        println!("{:?}", resolver.symbols);
+        println!("AST:\n{:?}", a);
+        println!("symbols\n:{:?}", resolver.symbols);
+        println!("Type Collector: ==================================\n");
+        let mut type_collector = TypeCollector::new(&contents);
+        type_collector.check_program(&mut a);
+        println!("TR:\n{:?}", type_collector.registry);
+        if !type_collector.errors.is_empty() {
+            for tc_erro in type_collector.errors {
+                println!("{}", tc_erro);
+            }
+        }
         println!("Type Checker: ==================================\n");
+        let mut type_checker = TypeChecker::new(resolver.symbols, type_collector.registry, &contents);
+        type_checker.check_program(&mut a);
+        println!("AST:\n{:?}", a);
+        if !type_checker.errors.is_empty() {
+            for tc_erro in type_checker.errors {
+                println!("{}", tc_erro);
+            }
+        }
     } else {
         print!("{}", b.err().unwrap())
     }

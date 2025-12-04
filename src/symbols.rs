@@ -101,10 +101,20 @@ impl SymbolTable {
     pub fn resolve_local(&mut self, name: String) -> Option<SymbolId> {
         let current_scope_id = self.current_scope_id();
         let scope = &mut self.scopes[current_scope_id];
-        match scope.symbols.entry(name) {
-            Entry::Occupied(entry) => Some(entry.get().clone()),
-            Entry::Vacant(_) => None,
-        }
+        scope.symbols.get(&name).cloned()
+    }
+
+    pub fn resolve_type_from(&self, name: String, mut current_id: ScopeId) -> Option<TypeSpec> {
+        loop {
+            let scope = &self.scopes[current_id];
+            match scope.symbols.get(&name) {
+                Some(&id) => return Some(self.get_symbol(id).ty.clone()),
+                None => match scope.parent {
+                    Some(parent_id) => {current_id = parent_id},
+                    None => return None,
+                }
+            }
+        };
     }
 
     pub fn get_symbol(&self, id: SymbolId) -> &Symbol {
