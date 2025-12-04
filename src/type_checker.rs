@@ -266,19 +266,19 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 }
             },
             Expr::LiteralInt(n) => expr.ty = {
-                if *n < 2^7 {
+                if *n < i8::MAX as u64 {
                     Some(Type::I8)
-                } else if *n < 2^8 {
+                } else if *n < u8::MAX as u64 {
                     Some(Type::U8)
-                } else if *n < 2^15 {
+                } else if *n < i16::MAX as u64 {
                     Some(Type::I16)
-                } else if *n < 2^16 {
+                } else if *n < u16::MAX as u64 {
                     Some(Type::U16)
-                } else if *n < 2^31 {
+                } else if *n < i32::MAX as u64 {
                     Some(Type::I32)
-                } else if *n < 2^32 {
+                } else if *n < u32::MAX as u64 {
                     Some(Type::U32)
-                } else if *n < 2^63 {
+                } else if *n < i64::MAX as u64 {
                     Some(Type::I64)
                 } else {
                     Some(Type::U64)
@@ -363,7 +363,7 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                                 expr.ty = Some(Type::Error);
                             }
                         }
-                    } else { 
+                    } else {
                         self.creat_compiler_error(format!("Type '{}' is not a struct", struct_name), expr.span);
                         expr.ty = Some(Type::Error);
                     }
