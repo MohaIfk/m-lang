@@ -196,8 +196,11 @@ impl<'a> Parser<'a> {
                 },
                 TokenType::Fn => {
                     self.consume(TokenType::LeftParen, "Expected '(' to start function type parameter list.")?;
-                    let params = self.parse_type_list()?;
-                    self.consume(TokenType::RightParen, "Expected ')' to end function type parameter list.")?;
+                    let mut params: Vec<TypeSpec> = vec![];
+                    if self.matches(TokenType::RightParen).is_none() {
+                        params = self.parse_type_list()?;
+                        self.consume(TokenType::RightParen, "Expected ')' to end function type parameter list.")?;
+                    }
                     let mut return_type = TypeSpec::Void;
                     if let Some(_) = self.matches(TokenType::Arrow) {
                         return_type = self.parse_type()?;
