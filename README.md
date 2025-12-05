@@ -24,14 +24,13 @@
 ```ebnf
 program ::= { top_level } EOF ;
 
-top_level ::= [ attributes ] (
+top_level ::= import_decl | ( [ attributes ] (
                 fn_decl
               | struct_decl
               | enum_decl
               | global_decl
               | extern_decl
-              | import_decl
-              ) ;
+              )) ;
 
 attributes ::= "@" IDENTIFIER [ "(" arg_list ")" ] ;
 
