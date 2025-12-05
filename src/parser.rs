@@ -197,6 +197,7 @@ impl<'a> Parser<'a> {
                 TokenType::Fn => {
                     self.consume(TokenType::LeftParen, "Expected '(' to start function type parameter list.")?;
                     let params = self.parse_type_list()?;
+                    self.consume(TokenType::RightParen, "Expected ')' to end function type parameter list.")?;
                     let mut return_type = TypeSpec::Void;
                     if let Some(_) = self.matches(TokenType::Arrow) {
                         return_type = self.parse_type()?;
@@ -787,11 +788,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_postfix(&mut self) -> Result<ExprNode, CompilerError<'a>> {
-        let expr = self.parse_primary()?;
-        if let Some(t) = self.peek(0) {
+        let mut expr = self.parse_primary()?;
+        loop {
+            let current = self.current;
+            expr = self.parse_postfix_op(expr)?;
+            if current == self.current { break }
+        }
+        Ok(expr)
+    }
+
+    fn parse_postfix_op(&mut self, expr: ExprNode) -> Result<ExprNode, CompilerError<'a>> {
+        if let Some(t) = self.m_matches(vec![TokenType::LeftBracket, TokenType::LeftParen, TokenType::Dot, TokenType::Arrow]).cloned() {
             match t.token_type {
                 TokenType::LeftBracket => {
-                    self.current += 1;
                     let idx = self.parse_expression()?;
                     let s = self.consume(TokenType::RightBracket, "Expected ']' to close array index.")?.span;
                     Ok(ExprNode::new(Expr::Index {
@@ -800,7 +809,6 @@ impl<'a> Parser<'a> {
                     }, Span::sum(t.span, s)))
                 },
                 TokenType::LeftParen => {
-                    self.current += 1;
                     let mut args: Vec<ExprNode> = vec![];
                     if let Some(tt) = self.peek_type() {
                         if tt != TokenType::RightParen {
@@ -816,7 +824,6 @@ impl<'a> Parser<'a> {
                     }, Span::sum(t.span, s)))
                 },
                 TokenType::Dot => {
-                    self.current += 1;
                     let member_token = self.consume(TokenType::Identifier, "Expected member name after '.'.")?;
                     let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
@@ -826,7 +833,6 @@ impl<'a> Parser<'a> {
                     }, Span::sum(t.span, member_token.span)))
                 },
                 TokenType::Arrow => {
-                    self.current += 1;
                     let member_token = self.consume(TokenType::Identifier, "Expected member name after '->'.")?;
                     let member = member_token.literal;
                     Ok(ExprNode::new(Expr::MemberAccess {
@@ -835,15 +841,11 @@ impl<'a> Parser<'a> {
                         is_arrow: true,
                     }, Span::sum(t.span, member_token.span)))
                 }
-                _ => Ok(expr)
+                _ => unreachable!()
             }
         } else {
             Ok(expr)
         }
-    }
-
-    fn parse_postfix_op(&mut self) -> Result<ExprNode, CompilerError<'a>> {
-        todo!()
     }
 
     fn parse_primary(&mut self) -> Result<ExprNode, CompilerError<'a>> {
