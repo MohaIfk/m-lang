@@ -774,12 +774,18 @@ impl<'a> Parser<'a> {
                     self.consume(TokenType::LeftParen, "Expected '(' after 'sizeof'.")?;
                     let current = self.current; // check_point
                     let target: SizeOfTarget;
-                    let ty = self.parse_type();
-                    if ty.is_err() {
+                    
+                    let try_type = self.parse_type();
+                    if let Ok(ty) = try_type {
+                        if self.peek_type() == Some(TokenType::LeftParen) {
+                            target = SizeOfTarget::Type(ty);
+                        } else {
+                            self.current = current; // Rollback
+                            target = SizeOfTarget::Expr(Box::new(self.parse_expression()?));
+                        }
+                    } else {
                         self.current = current; // Rollback
                         target = SizeOfTarget::Expr(Box::new(self.parse_expression()?));
-                    } else {
-                        target = SizeOfTarget::Type(ty?);
                     }
                     let span_end = self.consume(TokenType::RightParen, "Expected ')' after 'sizeof' argument.")?.span;
                     Ok(ExprNode::new(Expr::SizeOf { target }, Span::sum(t.span, span_end)))
