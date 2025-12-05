@@ -862,14 +862,23 @@ impl<'a> Parser<'a> {
         if let Some(t) = self.advance() {
             match t.token_type {
                 TokenType::Int => {
-                    let val = t.literal.parse::<u64>().map_err(|_|
-                        self.create_compiler_error(format!("Integer literal '{}' is too large", t.literal), t.span)
+                    let clean_literal = t.literal.replace('_', "");
+                    let val = if clean_literal.starts_with("0x") || clean_literal.starts_with("0X") {
+                        u64::from_str_radix(&clean_literal[2..], 16)
+                    } else if clean_literal.starts_with("0b") || clean_literal.starts_with("0B") {
+                        u64::from_str_radix(&clean_literal[2..], 2)
+                    } else {
+                        clean_literal.parse::<u64>()
+                    };
+                    let val = val.map_err(|_|
+                        self.create_compiler_error(format!("Integer literal '{}' is too large or invalid", t.literal), t.span)
                     )?;
                     Ok(ExprNode::new(Expr::LiteralInt(val), t.span))
                 },
                 TokenType::Float => {
-                    let val = t.literal.parse::<f64>().map_err(|_|
-                        self.create_compiler_error(format!("Float literal '{}' is too large", t.literal), t.span)
+                    let clean_literal = t.literal.replace('_', "");
+                    let val = clean_literal.parse::<f64>().map_err(|_|
+                        self.create_compiler_error(format!("Float literal '{}' is invalid or too large", t.literal), t.span)
                     )?;
                     Ok(ExprNode::new(Expr::LiteralFloat(val), t.span))
                 },

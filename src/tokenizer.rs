@@ -113,7 +113,6 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn get_token(&mut self, c: u8) -> Result<Token, String> {
-
         if c.is_ascii_digit() {
             return Ok(self.get_number());
         }
@@ -122,7 +121,7 @@ impl<'a> Tokenizer<'a> {
             return Ok(self.get_keyword_or_identifier())
         }
 
-        self.advance();
+        self.advance(); // Consume the character we peeked in generate_tokens
         match c {
             b'(' => Ok(self.craft_token(TokenType::LeftParen)),
             b')' => Ok(self.craft_token(TokenType::RightParen)),
@@ -234,6 +233,35 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn get_number(&mut self) -> Token {
+        // Handle Hex (0x) and Binary (0b)
+        if self.source.as_bytes()[self.start] == b'0' {
+            self.advance();
+            if let Some(c) = self.peek(0) {
+                println!("{}", c as char);
+                if c == b'x' || c == b'X' {
+                    self.advance();
+                    while let Some(h) = self.peek(0) {
+                        if h.is_ascii_hexdigit() || h == b'_' {
+                            self.advance();
+                        } else {
+                            break
+                        }
+                    }
+                    return self.craft_token(TokenType::Int);
+                } else if c == b'b' || c == b'B' {
+                    self.advance();
+                    while let Some(b) = self.peek(0) {
+                        if b == b'0' || b == b'1' || b == b'_' {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    return self.craft_token(TokenType::Int);
+                }
+            }
+        }
+
         let mut is_float: bool = false;
         while let Some(c) = self.peek(0) {
             if c.is_ascii_digit() {
@@ -244,17 +272,39 @@ impl<'a> Tokenizer<'a> {
         }
 
         if let Some(c) = self.peek(0) {
-            if let Some(d) = self.peek(1)  {
-                if c == b'.' && d.is_ascii_digit() { // we won't eat the dot if there is no digit ahead
-                    is_float = true;
-                    self.advance();
-                }
-            }
-            while let Some(c) = self.peek(0) {
-                if c.is_ascii_digit() {
-                    self.advance();
-                } else {
-                    break
+            if c == b'.' {
+                if let Some(next) = self.peek(1) {
+                    if next.is_ascii_digit() {
+                        is_float = true;
+                        self.advance();
+
+                        while let Some(d) = self.peek(0) {
+                            if d.is_ascii_digit() || d == b'_' {
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+
+                        // Exponent notation (e.g. 1.2e10)
+                        if let Some(e) = self.peek(0) {
+                            if e == b'e' || e == b'E' {
+                                self.advance();
+                                if let Some(sign) = self.peek(0) {
+                                    if sign == b'+' || sign == b'-' {
+                                        self.advance();
+                                    }
+                                }
+                                while let Some(d) = self.peek(0) {
+                                    if d.is_ascii_digit() || d == b'_' {
+                                        self.advance();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -283,8 +333,8 @@ impl<'a> Tokenizer<'a> {
         while let Some(c) = self.peek(0) {
             if c != b'"' {
                 self.advance();
-                if c == b'\n' { 
-                    self.line += 1; 
+                if c == b'\n' {
+                    self.line += 1;
                     self.col = 1;
                 }
                 if c == b'\\' {
