@@ -883,7 +883,27 @@ impl<'a> Parser<'a> {
                     Ok(ExprNode::new(Expr::LiteralFloat(val), t.span))
                 },
                 TokenType::String => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
-                TokenType::Char => Ok(ExprNode::new(Expr::LiteralString(t.literal.clone()), t.span)),
+                TokenType::Char => {
+                    let text = t.literal;
+                    let char_byte: u8 = if text.starts_with('\\') {
+                        match text.chars().nth(1).unwrap_or('\0') {
+                            'n' => b'\n',
+                            'r' => b'\r',
+                            't' => b'\t',
+                            '\\' => b'\\',
+                            '\'' => b'\'',
+                            '"' => b'"',
+                            '0' => b'\0',
+                            c => return Err(self.create_compiler_error(format!("Unknown escape sequence '\\{}' in char literal.", c), t.span)),
+                        }
+                    } else {
+                        if text.len() != 1 {
+                            return Err(self.create_compiler_error(format!("Invalid character literal '{}'. Char must be exactly one byte.", text), t.span));
+                        }
+                        text.as_bytes()[0]
+                    };
+                    Ok(ExprNode::new(Expr::LiteralChar(char_byte), t.span))
+                },
                 TokenType::True => Ok(ExprNode::new(Expr::LiteralBool(true), t.span)),
                 TokenType::False => Ok(ExprNode::new(Expr::LiteralBool(false), t.span)),
                 TokenType::Null => Ok(ExprNode::new(Expr::Null, t.span)),
