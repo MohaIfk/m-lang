@@ -364,20 +364,26 @@ impl<'a> Tokenizer<'a> {
         if let Some(c) = self.peek(0) {
             self.advance();
             if c == b'\\' {
-                if self.peek(0).is_none() {
+                if self.peek(0).is_some() {
+                    self.advance();
+                } else {
                     return Err("Unexpected EOF".to_string())
                 }
-                self.advance();
+            } else if c == b'\'' {
+                return Err("Empty char literal".to_string());
             }
-            if let Some(a) = self.peek(0) {
-                self.advance();
-                if a != b'\'' {
-                    return Err(format!("Char must end with \"'\" found {}", a as char));
-                }
-            }
-            Ok(Token::new(TokenType::Char, self.source[self.start+1..self.current-1].to_string(), Span::new(self.start, self.current, self.line, self.start_col)))
         } else {
-            Err("Unexpected EOF".to_string())
+            return Err("Unexpected EOF".to_string())
         }
+
+        if let Some(c) = self.peek(0) {
+            if c != b'\'' {
+                return Err(format!("Char literal must end with \"'\", found {:?}", c as char));
+            }
+            self.advance();
+        } else {
+            return Err("Unexpected EOF".to_string())
+        }
+        Ok(Token::new(TokenType::Char, self.source[self.start+1..self.current-1].to_string(), Span::new(self.start, self.current, self.line, self.start_col)))
     }
 }
