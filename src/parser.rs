@@ -38,7 +38,7 @@ impl<'a> Parser<'a> {
         self.previous()
     }
 
-    fn creat_compiler_error(&self, message: String, span: Span) -> CompilerError<'a> {
+    fn create_compiler_error(&self, message: String, span: Span) -> CompilerError<'a> {
         CompilerError::new(message, span, self.file_source)
     }
 
@@ -49,9 +49,9 @@ impl<'a> Parser<'a> {
                 return Ok(_t.clone());
             }
             println!("found {:?}", _t);
-            return Err(self.creat_compiler_error(msg.to_string(), _t.span.clone()))
+            return Err(self.create_compiler_error(msg.to_string(), _t.span.clone()))
         }
-        Err(self.creat_compiler_error(msg.to_string(), Span::default()))
+        Err(self.create_compiler_error(msg.to_string(), Span::default()))
     }
 
     fn matches(&mut self, t: TokenType) -> Option<Token> {
@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
             let item_kind = match t.token_type {
                 TokenType::Import => {
                     if !attributes.is_empty() {
-                        Err(self.creat_compiler_error("Attributes are not allowed on import statements.".to_string(), t.span.clone()))?
+                        Err(self.create_compiler_error("Attributes are not allowed on import statements.".to_string(), t.span.clone()))?
                     }
                     self.parse_import_decl()?
                 },
@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
                 TokenType::Struct => self.parse_struct_decl(attributes)?,
                 TokenType::Enum => self.parse_enum_decl(attributes)?,
                 TokenType::Const | TokenType::Var => self.parse_global_decl(attributes)?,
-                _ => return Err(self.creat_compiler_error(format!("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found '{:?}'.", t.token_type), t.span.clone())),
+                _ => return Err(self.create_compiler_error(format!("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found '{:?}'.", t.token_type), t.span.clone())),
             };
             Ok(ItemNode {
                 kind: item_kind,
@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
                 ty: None,
             })
         } else {
-            Err(self.creat_compiler_error("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found EOF".to_string(), Span::default()))
+            Err(self.create_compiler_error("Expected a top-level declaration (fn, struct, enum, const, var, extern, import). Found EOF".to_string(), Span::default()))
         }
     }
 
@@ -207,10 +207,10 @@ impl<'a> Parser<'a> {
                         ret: Box::new(return_type),
                     })
                 },
-                _ => Err(self.creat_compiler_error(format!("Expected a type specifier. Found '{:?}'.", t.token_type), t.span.clone()))
+                _ => Err(self.create_compiler_error(format!("Expected a type specifier. Found '{:?}'.", t.token_type), t.span.clone()))
             }
         } else {
-            Err(self.creat_compiler_error("Unexpected end of file while parsing type.".to_string(), Span::default()))
+            Err(self.create_compiler_error("Unexpected end of file while parsing type.".to_string(), Span::default()))
         }
     }
 
@@ -334,11 +334,11 @@ impl<'a> Parser<'a> {
                 TokenType::Const => true,
                 TokenType::Var => true,
                 _ => {
-                    return Err(self.creat_compiler_error("Bug".to_string(), t.span.clone()));
+                    return Err(self.create_compiler_error("Bug".to_string(), t.span.clone()));
                 },
             }
         } else {
-            return Err(self.creat_compiler_error("Bug".to_string(), Span::default()));
+            return Err(self.create_compiler_error("Bug".to_string(), Span::default()));
         }
         self.current += 1; // const|var
         let name = self.consume(TokenType::Identifier, "Expected identifier for global variable.")?.literal;
@@ -394,7 +394,7 @@ impl<'a> Parser<'a> {
                 _ => self.parse_assignment_or_expr_stmt(),
             }
         } else {
-            Err(self.creat_compiler_error("Expected a type found EOF".to_string(), Span::default()))
+            Err(self.create_compiler_error("Expected a type found EOF".to_string(), Span::default()))
         }
     }
 
@@ -405,11 +405,11 @@ impl<'a> Parser<'a> {
                 TokenType::Let => false,
                 TokenType::Var => true,
                 _ => {
-                    return Err(self.creat_compiler_error("Bug".to_string(), t.span.clone()));
+                    return Err(self.create_compiler_error("Bug".to_string(), t.span.clone()));
                 },
             }
         } else {
-            return Err(self.creat_compiler_error("Bug".to_string(), Span::default()));
+            return Err(self.create_compiler_error("Bug".to_string(), Span::default()));
         }
         self.current += 1; // let|var
         let name_token = self.consume(TokenType::Identifier, "need identifier after global declaration")?;
@@ -479,11 +479,11 @@ impl<'a> Parser<'a> {
                     TokenType::If => Some(Box::new(self.parse_if_stmt()?)),
                     TokenType::LeftBrace => Some(Box::new(self.parse_block()?)),
                     _ => {
-                        return Err(self.creat_compiler_error("Unexpected token in 'else' clause. Expected 'if' or block.".to_string(), t.span.clone()));
+                        return Err(self.create_compiler_error("Unexpected token in 'else' clause. Expected 'if' or block.".to_string(), t.span.clone()));
                     }
                 };
             } else {
-                return Err(self.creat_compiler_error("Unexpected EOF".to_string(), Span::default()));
+                return Err(self.create_compiler_error("Unexpected EOF".to_string(), Span::default()));
             }
         }
 
@@ -783,7 +783,7 @@ impl<'a> Parser<'a> {
                 _ => self.parse_postfix(),
             }
         } else {
-            Err(self.creat_compiler_error("Unexpected end of file while parsing expression.".to_string(), Span::default()))
+            Err(self.create_compiler_error("Unexpected end of file while parsing expression.".to_string(), Span::default()))
         }
     }
 
@@ -815,7 +815,7 @@ impl<'a> Parser<'a> {
                             args = self.parse_arg_list()?;
                         }
                     } else {
-                        return Err(self.creat_compiler_error("Unexpected EOF in argument list".to_string(), Span::default()));
+                        return Err(self.create_compiler_error("Unexpected EOF in argument list".to_string(), Span::default()));
                     }
                     let s = self.consume(TokenType::RightParen, "Expected ')' to close attribute argument list.")?.span;
                     Ok(ExprNode::new(Expr::Call {
@@ -853,13 +853,13 @@ impl<'a> Parser<'a> {
             match t.token_type {
                 TokenType::Int => {
                     let val = t.literal.parse::<u64>().map_err(|_|
-                        self.creat_compiler_error(format!("Integer literal '{}' is too large", t.literal), t.span)
+                        self.create_compiler_error(format!("Integer literal '{}' is too large", t.literal), t.span)
                     )?;
                     Ok(ExprNode::new(Expr::LiteralInt(val), t.span))
                 },
                 TokenType::Float => {
                     let val = t.literal.parse::<f64>().map_err(|_|
-                        self.creat_compiler_error(format!("Float literal '{}' is too large", t.literal), t.span)
+                        self.create_compiler_error(format!("Float literal '{}' is too large", t.literal), t.span)
                     )?;
                     Ok(ExprNode::new(Expr::LiteralFloat(val), t.span))
                 },
@@ -892,10 +892,10 @@ impl<'a> Parser<'a> {
                     self.consume(TokenType::RightParen, "Expected ')'")?;
                     Ok(expr)
                 },
-                _ => Err(self.creat_compiler_error(format!("Unexpected token {:?}", t), t.span.clone()))
+                _ => Err(self.create_compiler_error(format!("Unexpected token {:?}", t), t.span.clone()))
             }
         } else {
-            Err(self.creat_compiler_error("Unexpected EOF".to_string(), Span::default()))
+            Err(self.create_compiler_error("Unexpected EOF".to_string(), Span::default()))
         }
     }
 
