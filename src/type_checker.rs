@@ -624,16 +624,35 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 let callee_ty = callee.ty.as_ref().unwrap();
                 if let Type::Fn {params, ret} = callee_ty {
                     if args.len() != params.len() {
-                        self.creat_compiler_error(format!("Expected {} args, found {}", params.len(), args.len()), expr.span);
+                        self.creat_compiler_error(format!("Arg count mismatch: expected {}, got {}", params.len(), args.len()), expr.span);
                     }
 
                     let limit = std::cmp::min(args.len(), params.len());
 
                     for i in 0..limit {
                         self.visit_expr(&mut args[i]);
-                        let arg_ty = args[i].ty.as_ref().unwrap();
+                        let arg_ty = args[i].ty.as_ref().unwrap().clone();
                         let param_ty = &params[i];
-                        self.check_assignment(param_ty, arg_ty, args[i].span);
+
+                        let is_compatible = match arg_ty {
+                            Type::UntypedInt(val) => {
+                                if Type::UntypedInt(val).try_unify_literal(param_ty) {
+                                    args[i].ty = Some(param_ty.clone());
+                                    true
+                                } else { false }
+                            },
+                            Type::UntypedFloat(val) => {
+                                if Type::UntypedFloat(val).try_unify_literal(param_ty) {
+                                    args[i].ty = Some(param_ty.clone());
+                                    true
+                                } else { false }
+                            },
+                            _ => false
+                        };
+
+                        if !is_compatible {
+                            self.check_assignment(param_ty, &arg_ty, args[i].span)
+                        }
                     }
 
                     for i in limit..args.len() {
@@ -654,10 +673,30 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 }
                 for (f_name, f_expr) in fields {
                     self.visit_expr(f_expr);
-                    let f_expr_ty = f_expr.ty.as_ref().unwrap();
+                    let f_expr_ty = f_expr.ty.as_ref().unwrap().clone();
                     match struct_fields.get(f_name) {
-                        Some(f_target_type) => {
-                            self.check_assignment(f_target_type, f_expr_ty, f_expr.span);
+                        Some(f_target_ty) => {
+                            let compatible = match f_expr_ty {
+                                Type::UntypedInt(val) => {
+                                    if Type::UntypedInt(val).try_unify_literal(f_target_ty) {
+                                        f_expr.ty = Some(f_target_ty.clone());
+                                        true
+                                    } else { false }
+                                },
+                                Type::UntypedFloat(val) => {
+                                    if Type::UntypedFloat(val).try_unify_literal(f_target_ty) {
+                                        f_expr.ty = Some(f_target_ty.clone());
+                                        true
+                                    } else { false }
+                                },
+                                _ => {
+                                    self.check_assignment(f_target_ty, &f_expr_ty, f_expr.span);
+                                    true
+                                }
+                            };
+                            if !compatible {
+                                self.check_assignment(f_target_ty, &f_expr_ty, f_expr.span);
+                            }
                         },
                         None => {
                             self.creat_compiler_error(format!("Struct '{}' has no field named '{}'", struct_name, f_name), f_expr.span);
