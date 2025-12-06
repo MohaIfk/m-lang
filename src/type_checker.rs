@@ -442,40 +442,59 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 }
             },
             Expr::Unary {op, rhs} => expr.ty = {
+                self.visit_expr(rhs);
+                let rhs_ty = rhs.ty.as_ref().unwrap();
+
                 match op {
-                    UnaryOp::Neg => {
-                        self.visit_expr(rhs);
-                        let rhs_ty = rhs.ty.as_ref().unwrap();
-                        if rhs_ty.is_numeric() {
-                            Some(rhs_ty.clone())
-                        } else {
+                    UnaryOp::Neg => match rhs_ty {
+                        Type::UntypedInt(val) => Some(Type::UntypedInt(-val)),
+                        Type::UntypedFloat(val) => Some(Type::UntypedFloat(-val)),
+                        t if t.is_numeric() => { Some(t.clone()) },
+                        _ => {
+                            self.creat_compiler_error(
+                                format!("Cannot apply unary minus '-' to type {:?}", rhs_ty),
+                                expr.span
+                            );
                             Some(Type::Error)
                         }
-                    }
+                    },
                     UnaryOp::Not => {
-                        self.visit_expr(rhs);
-                        let rhs_ty = rhs.ty.as_ref().unwrap();
                         if *rhs_ty == Type::BOOL {
                             Some(Type::BOOL)
                         } else {
+                            self.creat_compiler_error(
+                                format!("Logical NOT '!' requires boolean, found {:?}", rhs_ty),
+                                expr.span
+                            );
                             Some(Type::Error)
                         }
                     }
                     UnaryOp::Deref => {
-                        self.visit_expr(rhs);
-                        let rhs_ty = rhs.ty.as_ref().unwrap();
-                        if let Type::Pointer(t) = rhs_ty {
-                            Some(*t.clone())
+                        if let Type::Pointer(inner) = rhs_ty {
+                            if inner.is_void() {
+                                self.creat_compiler_error(
+                                    "Cannot dereference a void pointer (*void). Cast it first.".into(),
+                                    expr.span
+                                );
+                                Some(Type::Error)
+                            } else {
+                                Some(*inner.clone())
+                            }
                         } else {
+                            self.creat_compiler_error(
+                                format!("Cannot dereference non-pointer type {:?}", rhs_ty),
+                                expr.span
+                            );
                             Some(Type::Error)
                         }
                     }
                     UnaryOp::AddressOf => {
-                        self.visit_expr(rhs);
                         if !rhs.is_lvalue() {
-                            self.creat_compiler_error("Cannot take address of temporary value".into(), expr.span);
+                            self.creat_compiler_error(
+                                "Cannot take address of a temporary value or literal".into(),
+                                expr.span
+                            );
                         }
-                        let rhs_ty = rhs.ty.as_ref().unwrap();
                         Some(Type::Pointer(Box::new(rhs_ty.clone())))
                     }
                 }
