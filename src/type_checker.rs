@@ -513,11 +513,41 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 }
             },
             Expr::SizeOf {target} => {
-                expr.ty = Some(Type::U64);
+                match target {
+                    SizeOfTarget::Type(type_spec) => {
+                        let resolved_ty = self.resolve_type(type_spec);
+
+                        if resolved_ty.is_void() {
+                            self.creat_compiler_error("Cannot determine size of 'void'".into(), expr.span);
+                        }
+                    },
+                    SizeOfTarget::Expr(target_expr) => {
+                        self.visit_expr(target_expr);
+                        let ty = target_expr.ty.as_ref().unwrap();
+                        if ty.is_void() {
+                            self.creat_compiler_error("Cannot determine size of void expression".into(), expr.span);
+                        }
+                    }
+                }
+                expr.ty = Some(Type::Usize);
             },
-            Expr::Cast{expr: _expr , target} => {
-                self.visit_expr(_expr);
-                expr.ty = Some(self.resolve_type(target));
+            Expr::Cast{expr: sub_expr , target} => {
+                let dest_ty = self.resolve_type(target);
+                self.visit_expr(sub_expr);
+                let src_ty = sub_expr.ty.as_ref().unwrap();
+
+                match src_ty.check_cast_safety(&dest_ty) {
+                    CastSafety::Forbidden => {
+                        self.creat_compiler_error(
+                            format!("Invalid cast: Cannot cast from {:?} to {:?}", src_ty, dest_ty),
+                            expr.span
+                        );
+                        expr.ty = Some(Type::Error);
+                    },
+                    _ => {
+                        expr.ty = Some(dest_ty);
+                    }
+                }
             },
             Expr::Null => expr.ty = Some(Type::Pointer(Box::new(Type::Void))),
             Expr::Index{array, .. } => {

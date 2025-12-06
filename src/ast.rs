@@ -195,6 +195,19 @@ impl Type {
         use Type::*;
 
         match (self, target) {
+            (UntypedInt(val), t) if t.is_integer() => {
+                let min = t.min_value();
+                let max = t.max_value();
+                if *val >= min && *val <= max {
+                    CastSafety::Safe
+                } else {
+                    CastSafety::Lossy
+                }
+            },
+            (UntypedInt(_), t) if t.is_float() => CastSafety::Safe,
+            (UntypedFloat(_), t) if t.is_float() => CastSafety::Safe,
+            (UntypedFloat(_), t) if t.is_integer() => CastSafety::FloatToInt,
+
             (t1, t2) if t1.is_integer() && t2.is_integer() => {
                 let src_size = t1.size_in_bytes();
                 let dst_size = t2.size_in_bytes();
