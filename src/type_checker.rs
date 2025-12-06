@@ -98,6 +98,92 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    fn resolve_common_type(&mut self, lhs: &mut ExprNode, rhs: &mut ExprNode, op: BinaryOp) -> Option<Type> {
+        let l_ty = lhs.ty.as_ref().unwrap().clone();
+        let r_ty = rhs.ty.as_ref().unwrap().clone();
+
+        match (l_ty, r_ty) {
+            (Type::UntypedInt(l), Type::UntypedInt(r)) => {
+                let res = match op {
+                    BinaryOp::Add => l + r,
+                    BinaryOp::Sub => l - r,
+                    BinaryOp::Mul => l * r,
+                    BinaryOp::Div => if r != 0 { l / r } else { self.creat_compiler_error("div by 0".into(), rhs.span); 0 },
+                    BinaryOp::Mod => if r != 0 { l % r } else { self.creat_compiler_error("div by 0".into(), rhs.span); 0 },
+                    BinaryOp::BitAnd => l & r,
+                    BinaryOp::BitOr => l | r,
+                    BinaryOp::BitXor => l ^ r,
+                    BinaryOp::Shl => l << r,
+                    BinaryOp::Shr => l >> r,
+                    _ => 0
+                };
+                Some(Type::UntypedInt(res))
+            },
+            (Type::UntypedFloat(l), Type::UntypedFloat(r)) => {
+                let res = match op {
+                    BinaryOp::Add => l + r,
+                    BinaryOp::Sub => l - r,
+                    BinaryOp::Mul => l * r,
+                    BinaryOp::Div => if r != 0.0 { l / r } else { self.creat_compiler_error("div by 0".into(), rhs.span); 0.0 },
+                    BinaryOp::Mod => if r != 0.0 { l % r } else { self.creat_compiler_error("div by 0".into(), rhs.span); 0.0 },
+                    _ => 0.0,
+                };
+                Some(Type::UntypedFloat(res))
+            },
+
+            (t1, t2) if t1 == t2 => Some(t1),
+            (concrete, Type::UntypedInt(val)) => {
+                if Type::UntypedInt(val).try_unify_literal(&concrete) {
+                    rhs.ty = Some(concrete.clone());
+                    Some(concrete)
+                } else {
+                    self.creat_compiler_error(format!("Literal {} does not fit into type {:?}", val, concrete), rhs.span);
+                    Some(Type::Error)
+                }
+            },
+            (concrete, Type::UntypedFloat(val)) => {
+                if concrete.is_float() {
+                    rhs.ty = Some(concrete.clone());
+                    Some(concrete)
+                } else {
+                    self.creat_compiler_error(format!("Float {} vs Non-Float {:?}", val, concrete), rhs.span);
+                    Some(Type::Error)
+                }
+            },
+
+            (Type::UntypedInt(val), concrete) => {
+                if Type::UntypedInt(val).try_unify_literal(&concrete) {
+                    lhs.ty = Some(concrete.clone());
+                    Some(concrete)
+                } else {
+                    self.creat_compiler_error(format!("Literal {} does not fit into type {:?}", val, concrete), lhs.span);
+                    Some(Type::Error)
+                }
+            },
+            (Type::UntypedFloat(val), concrete) => {
+                if concrete.is_float() {
+                    lhs.ty = Some(concrete.clone());
+                    Some(concrete)
+                } else {
+                    self.creat_compiler_error(format!("Float {} vs Non-Float {:?}", val, concrete), lhs.span);
+                    Some(Type::Error)
+                }
+            },
+
+            (Type::Pointer(l_inner), Type::Pointer(r_inner)) => {
+                if l_inner == r_inner {
+                    Some(Type::Pointer(l_inner))
+                } else if l_inner.is_void() || r_inner.is_void() {
+                    Some(Type::Pointer(Box::new(Type::Void)))
+                } else {
+                    None
+                }
+            },
+
+            (_, _) => None
+        }
+    }
+
     fn resolve_type(&mut self, ty: &TypeSpec) -> Type {
         match self.type_resolver.resolve_type(ty) {
             Ok(resolved_ty) => resolved_ty,
@@ -248,80 +334,111 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
             Expr::Binary { lhs, op, rhs } => {
                 self.visit_expr(lhs);
                 self.visit_expr(rhs);
-                let left_ty = lhs.ty.as_ref().unwrap();
-                let right_ty = rhs.ty.as_ref().unwrap();
+                let l_ty = lhs.ty.as_ref().unwrap();
+                let r_ty = rhs.ty.as_ref().unwrap();
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub => expr.ty = {
-                        match (left_ty, right_ty) {
-                            (concrete, Type::UntypedInt(val)) | (Type::UntypedInt(val), concrete)
-                            if concrete.is_integer() => {
-                                if Type::UntypedInt(*val).try_unify_literal(concrete) {
-                                    Some(concrete.clone())
-                                } else {
-                                    self.creat_compiler_error(
-                                        format!("Literal {} does not fit into type {:?}", val, concrete),
-                                        expr.span
-                                    );
-                                    Some(Type::Error)
-                                }
-                            },
-                            (Type::UntypedInt(lval), Type::UntypedInt(rval)) => {
-                                let r = match op {
-                                    BinaryOp::Add => lval + rval,
-                                    BinaryOp::Sub => lval - rval,
-                                    _ => unreachable!()
-                                };
-                                Some(Type::UntypedInt(r))
-                            },
-                            (concrete, Type::UntypedFloat(val)) | (Type::UntypedFloat(val), concrete)
-                            if concrete.is_float() => {
-                                if Type::UntypedFloat(*val).try_unify_literal(concrete) {
-                                    Some(concrete.clone())
-                                } else {
-                                    self.creat_compiler_error(
-                                        format!("Float literal {} does not fit into type {:?}", val, concrete),
-                                        expr.span
-                                    );
-                                    Some(Type::Error)
-                                }
-                            },
-                            (Type::UntypedFloat(lval), Type::UntypedFloat(rval)) => {
-                                let r = match op {
-                                    BinaryOp::Add => lval + rval,
-                                    BinaryOp::Sub => lval - rval,
-                                    _ => unreachable!()
-                                };
-                                Some(Type::UntypedFloat(r))
-                            },
-                            (t1, t2) if t1 == t2 && t1.is_numeric() => Some(t1.clone()),
-                            (Type::Pointer(inner), t2) if t2.is_integer() => Some(Type::Pointer(inner.clone())),
-                            (Type::Pointer(t1), Type::Pointer(t2)) if t1 == t2 && matches!(op, BinaryOp::Sub) => Some(Type::U64),
-                            _ => {
-                                self.creat_compiler_error(format!("Invalid binary op {:?} between {:?} and {:?}", op, left_ty, right_ty), expr.span);
-                                Some(Type::Error)
+                    BinaryOp::Add | BinaryOp::Sub => {
+                        if let Type::Pointer(inner) = l_ty {
+                            if r_ty.is_integer() || matches!(r_ty, Type::UntypedInt(_)) {
+                                expr.ty = Some(Type::Pointer(inner.clone()));
+                                return;
                             }
                         }
-                    },
-                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => expr.ty = {
-                        if left_ty == right_ty && left_ty.is_numeric() {
-                            Some(left_ty.clone())
+                        if matches!(op, BinaryOp::Sub) {
+                            if let (Type::Pointer(t1), Type::Pointer(t2)) = (l_ty, r_ty) {
+                                if t1 == t2 {
+                                    expr.ty = Some(Type::Usize);
+                                    return;
+                                }
+                            }
+                        }
+
+                        if let Some(common) = self.resolve_common_type(lhs, rhs, *op) {
+                            if common.is_numeric() || matches!(common, Type::UntypedInt(_) | Type::UntypedFloat(_)) {
+                                expr.ty = Some(common);
+                            } else {
+                                self.creat_compiler_error(format!("Arithmetic not allowed on {:?}", common), expr.span);
+                                expr.ty = Some(Type::Error);
+                            }
                         } else {
-                            self.creat_compiler_error(format!("Type Mismatch in binary op between: {:?} and {:?}", left_ty, right_ty), expr.span);
-                            Some(Type::Error)
+                            self.creat_compiler_error(format!("Type Mismatch: {:?} {:?} {:?}", lhs.ty, op, rhs.ty), expr.span);
+                            expr.ty = Some(Type::Error);
                         }
                     },
-                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => expr.ty = {
-                        match (left_ty, right_ty) {
-                            (t1, t2) if t1.is_numeric() && t2.is_numeric() => Some(right_ty.clone()),
-                            (t1, t2) if t1.size_in_bytes() != 0 && t1.size_in_bytes() == t2.size_in_bytes() => Some(right_ty.clone()),
-                            (_, _) => {
-                                self.creat_compiler_error(format!("Type Mismatch in binary op between: {:?} and {:?}", left_ty, right_ty), expr.span);
-                                Some(Type::Error)
+                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                        if let Some(common) = self.resolve_common_type(lhs, rhs, *op) {
+                            if common.is_numeric() || matches!(common, Type::UntypedInt(_) | Type::UntypedFloat(_)) {
+                                expr.ty = Some(common);
+                            } else {
+                                self.creat_compiler_error(format!("Math op {:?} requires numbers, found {:?}", op, common), expr.span);
+                                expr.ty = Some(Type::Error);
                             }
+                        } else {
+                            self.creat_compiler_error(format!("Type Mismatch: {:?} {:?} {:?}", lhs.ty, op, rhs.ty), expr.span);
+                            expr.ty = Some(Type::Error);
                         }
                     },
-                    BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Le | BinaryOp::Ge | BinaryOp::Lt | BinaryOp::Gt => expr.ty = Some(Type::BOOL),
-                    BinaryOp::And | BinaryOp::Or => expr.ty = Some(Type::BOOL),
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
+                        if let Some(common) = self.resolve_common_type(lhs, rhs, *op) {
+                            if common.is_integer() || matches!(common, Type::UntypedInt(_)) {
+                                expr.ty = Some(common);
+                            } else {
+                                self.creat_compiler_error(format!("Bitwise op {:?} requires integers, found {:?}", op, common), expr.span);
+                                expr.ty = Some(Type::Error);
+                            }
+                        } else {
+                            self.creat_compiler_error(format!("Type Mismatch: {:?} {:?} {:?}", lhs.ty, op, rhs.ty), expr.span);
+                            expr.ty = Some(Type::Error);
+                        }
+                    },
+                    BinaryOp::Shl | BinaryOp::Shr => {
+                        if !l_ty.is_integer() && !matches!(l_ty, Type::UntypedInt(_)) {
+                            self.creat_compiler_error(format!("Shift target must be integer, found {:?}", l_ty), lhs.span);
+                        }
+
+                        if !r_ty.is_integer() && !matches!(r_ty, Type::UntypedInt(_)) {
+                            self.creat_compiler_error(format!("Shift amount must be integer, found {:?}", r_ty), rhs.span);
+                        }
+
+                        if let (Type::UntypedInt(l), Type::UntypedInt(r)) = (l_ty, r_ty) {
+                            let res = match op {
+                                BinaryOp::Shl => l << r,
+                                BinaryOp::Shr => l >> r,
+                                _ => 0
+                            };
+                            expr.ty = Some(Type::UntypedInt(res));
+                        } else {
+                            expr.ty = Some(l_ty.clone());
+                        }
+                    },
+                    BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge=> {
+                        if let Some(common) = self.resolve_common_type(lhs, rhs, *op) {
+                            let valid = common.is_numeric()
+                                || common.is_pointer()
+                                || matches!(common, Type::BOOL | Type::Enum(_) | Type::UntypedInt(_) | Type::UntypedFloat(_));
+
+                            if !valid {
+                                self.creat_compiler_error(format!("Cannot compare types of {:?}", common), expr.span);
+                            }
+
+                            if matches!(op, BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge) {
+                                if !common.is_numeric() && !common.is_pointer() && !matches!(common, Type::UntypedInt(_) | Type::UntypedFloat(_)) {
+                                    self.creat_compiler_error(format!("Cannot order non-numeric types {:?}", common), expr.span);
+                                }
+                            }
+
+                            expr.ty = Some(Type::BOOL);
+                        } else {
+                            self.creat_compiler_error(format!("Type Mismatch in comparison: {:?} vs {:?}", lhs.ty, rhs.ty), expr.span);
+                            expr.ty = Some(Type::Error);
+                        }
+                    },
+                    BinaryOp::And | BinaryOp::Or => {
+                        if l_ty != &Type::BOOL { self.creat_compiler_error(format!("Expected Bool, found {:?}", l_ty), lhs.span); }
+                        if r_ty != &Type::BOOL { self.creat_compiler_error(format!("Expected Bool, found {:?}", r_ty), rhs.span); }
+
+                        expr.ty = Some(Type::BOOL);
+                    },
                 }
             },
             Expr::Unary {op, rhs} => expr.ty = {
