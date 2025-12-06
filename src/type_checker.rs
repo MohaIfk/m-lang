@@ -273,6 +273,26 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                                 };
                                 Some(Type::UntypedInt(r))
                             },
+                            (concrete, Type::UntypedFloat(val)) | (Type::UntypedFloat(val), concrete)
+                            if concrete.is_float() => {
+                                if Type::UntypedFloat(*val).try_unify_literal(concrete) {
+                                    Some(concrete.clone())
+                                } else {
+                                    self.creat_compiler_error(
+                                        format!("Float literal {} does not fit into type {:?}", val, concrete),
+                                        expr.span
+                                    );
+                                    Some(Type::Error)
+                                }
+                            },
+                            (Type::UntypedFloat(lval), Type::UntypedFloat(rval)) => {
+                                let r = match op {
+                                    BinaryOp::Add => lval + rval,
+                                    BinaryOp::Sub => lval - rval,
+                                    _ => unreachable!()
+                                };
+                                Some(Type::UntypedFloat(r))
+                            },
                             (t1, t2) if t1 == t2 && t1.is_numeric() => Some(t1.clone()),
                             (Type::Pointer(inner), t2) if t2.is_integer() => Some(Type::Pointer(inner.clone())),
                             (Type::Pointer(t1), Type::Pointer(t2)) if t1 == t2 && matches!(op, BinaryOp::Sub) => Some(Type::U64),
@@ -343,10 +363,8 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                     }
                 }
             },
-            Expr::LiteralInt(n) => expr.ty = {
-                Some(Type::UntypedInt(*n as i128))
-            },
-            Expr::LiteralFloat(_) => expr.ty = Some(Type::F32),
+            Expr::LiteralInt(n) => expr.ty = Some(Type::UntypedInt(*n as i128)),
+            Expr::LiteralFloat(f) => expr.ty = Some(Type::UntypedFloat(*f)),
             Expr::LiteralChar(_) => expr.ty = Some(Type::CHAR),
             Expr::LiteralBool(_) => expr.ty = Some(Type::BOOL),
             Expr::LiteralString(_) => expr.ty = Some(Type::Pointer(Box::new(Type::CHAR))),
@@ -473,12 +491,7 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                     let f_expr_ty = f_expr.ty.as_ref().unwrap();
                     match struct_fields.get(f_name) {
                         Some(f_target_type) => {
-                            if !f_target_type.can_assign_from(f_expr_ty) {
-                                self.creat_compiler_error(
-                                    format!("Type Mismatch: Cannot convert {:?} to {:?}", f_expr_ty, f_target_type),
-                                    f_expr.span
-                                );
-                            }
+                            self.check_assignment(f_target_type, f_expr_ty, f_expr.span);
                         },
                         None => {
                             self.creat_compiler_error(format!("Struct '{}' has no field named '{}'", struct_name, f_name), f_expr.span);
