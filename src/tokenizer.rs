@@ -237,7 +237,6 @@ impl<'a> Tokenizer<'a> {
         if self.source.as_bytes()[self.start] == b'0' {
             self.advance();
             if let Some(c) = self.peek(0) {
-                println!("{}", c as char);
                 if c == b'x' || c == b'X' {
                     self.advance();
                     while let Some(h) = self.peek(0) {
