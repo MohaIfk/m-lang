@@ -1,3 +1,4 @@
+use crate::ast::Type::F64;
 use crate::error::Span;
 use crate::symbols::ScopeId;
 
@@ -33,7 +34,8 @@ pub enum Type {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
     U8, U16, U32, U64,
-    Named(String),
+    UntypedInt(i128),
+    UntypedFloat(f64),
     Struct(String),
     Enum(String),
     Pointer(Box<Type>),
@@ -47,63 +49,187 @@ pub enum CastSafety {
     Safe,
     Lossy,
     SignMismatch,
+    FloatToInt,
+    IntToFloat,
+    PointerCast,
+    PointerToInt,
+    IntToPointer,
     Forbidden,
 }
 
 impl Type {
-    pub fn size_in_bytes(&self) -> u8 {
+    pub fn size_in_bytes(&self) -> usize {
         use Type::*;
         match self {
             U8 | I8 | BOOL | CHAR => 1,
             U16 | I16 => 2,
             U32 | I32 | F32 => 4,
             U64 | I64 | F64 => 8,
-            _ => 0,
+            Pointer(_) | Fn { .. } => 8,
+            Array(ty, len) => ty.size_in_bytes() * (*len as usize),
+            Void => 0,
+            Struct(_) | Enum(_) => 0,
+            UntypedInt(_) | UntypedFloat(_) => 0,
+            Error => 0,
+        }
+    }
+
+    pub fn min_value(&self) -> i128 {
+        match self {
+            Type::F32 => unreachable!(),
+            Type::F64 => unreachable!(),
+            Type::BOOL => unreachable!(),
+            Type::CHAR => 0,
+            Type::I8 => i8::MIN as i128,
+            Type::I16 => i16::MIN as i128,
+            Type::I32 => i32::MIN as i128,
+            Type::I64 => i64::MIN as i128,
+            Type::U8 => u8::MIN as i128,
+            Type::U16 => u16::MIN as i128,
+            Type::U32 => u32::MIN as i128,
+            Type::U64 => u64::MIN as i128,
+            Type::UntypedInt(_) => unreachable!(),
+            Type::UntypedFloat(_) => unreachable!(),
+            Type::Struct(_) => unreachable!(),
+            Type::Enum(_) => unreachable!(),
+            Type::Pointer(_) => usize::MIN as i128,
+            Type::Array(_, _) => unreachable!(),
+            Type::Fn { .. } => unreachable!(),
+            Type::Void => unreachable!(),
+            Type::Error => unreachable!(),
+        }
+    }
+
+    pub fn max_value(&self) -> i128 {
+        match self {
+            Type::F32 => unreachable!(),
+            Type::F64 => unreachable!(),
+            Type::BOOL => unreachable!(),
+            Type::CHAR => 0,
+            Type::I8 => i8::MAX as i128,
+            Type::I16 => i16::MAX as i128,
+            Type::I32 => i32::MAX as i128,
+            Type::I64 => i64::MAX as i128,
+            Type::U8 => u8::MAX as i128,
+            Type::U16 => u16::MAX as i128,
+            Type::U32 => u32::MAX as i128,
+            Type::U64 => u64::MAX as i128,
+            Type::UntypedInt(_) => unreachable!(),
+            Type::UntypedFloat(_) => unreachable!(),
+            Type::Struct(_) => unreachable!(),
+            Type::Enum(_) => unreachable!(),
+            Type::Pointer(_) => usize::MAX as i128,
+            Type::Array(_, _) => unreachable!(),
+            Type::Fn { .. } => unreachable!(),
+            Type::Void => unreachable!(),
+            Type::Error => unreachable!(),
         }
     }
 
     pub fn is_numeric(&self) -> bool {
-        use Type::*;
-        matches!(self, F32|F64|I8|I16|I32|I64|U8|U16|U32|U64)
+        self.is_integer() || self.is_float()
     }
 
-    pub fn can_cast_to(&self, target: &Type) -> bool {
+    pub fn is_integer(&self) -> bool {
         use Type::*;
+        matches!(self, I8|I16|I32|I64|U8|U16|U32|U64)
+    }
+
+    pub fn is_signed_int(&self) -> bool {
+        use Type::*;
+        matches!(self, I8|I16|I32|I64)
+    }
+
+    pub fn is_unsigned_int(&self) -> bool {
+        use Type::*;
+        matches!(self, U8|U16|U32|U64)
+    }
+
+    pub fn is_float(&self) -> bool {
+        use Type::*;
+        matches!(self, F32|F64)
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        use Type::*;
+        matches!(self, Pointer(_))
+    }
+
+    pub fn is_void(&self) -> bool {
+        matches!(self, Type::Void)
+    }
+
+    pub fn try_unify_literal(&self, target: &Type) -> bool {
         match (self, target) {
-            (t1, t2) if t1.is_numeric() && t2.is_numeric() => true,
-            (Pointer(_), U64) => true,
-            (U64, Pointer(_)) => true,
-            (Pointer(_), Pointer(_)) => true,
+            (Type::UntypedInt(val), t) if t.is_integer() => {
+                let min = t.min_value();
+                let max = t.max_value();
+                *val >= min && *val <= max
+            },
+            (Type::UntypedFloat(val), t) if t.is_float() => true,
+            (Type::UntypedInt(0), t) if t.is_pointer() => true, // We allow 0 to be a null pointer
+            _ => false
+        }
+    }
+
+    pub fn can_assign_from(&self, src: &Type) -> bool {
+        if self == src { return true; }
+
+        match (self, src) {
+            (Type::Pointer(inner), Type::Pointer(_)) if inner.is_void() => true,
+            (Type::Pointer(_), Type::Pointer(_)) => false,
+            (dest, src) if dest.is_numeric() && src.is_numeric() => {
+                matches!(src.check_cast_safety(dest), CastSafety::Safe)
+            }
             _ => false
         }
     }
 
     pub fn check_cast_safety(&self, target: &Type) -> CastSafety {
         if self == target { return CastSafety::Safe; }
+        use Type::*;
 
-        if self.is_numeric() && target.is_numeric() {
-            let src_size = self.size_in_bytes();
-            let dest_size = target.size_in_bytes();
+        match (self, target) {
+            (t1, t2) if t1.is_integer() && t2.is_integer() => {
+                let src_size = t1.size_in_bytes();
+                let dst_size = t2.size_in_bytes();
+                let src_signed = t1.is_signed_int();
+                let dst_signed = t2.is_signed_int();
 
-            let src_signed = matches!(self, Type::I8 | Type::I16 | Type::I32 | Type::I64);
-            let dest_signed = matches!(target, Type::I8 | Type::I16 | Type::I32 | Type::I64);
+                if src_signed != dst_signed {
+                    return CastSafety::SignMismatch;
+                }
 
-            if src_signed != dest_signed {
-                return CastSafety::SignMismatch;
-            }
+                if dst_size < src_size {
+                    CastSafety::Lossy
+                } else {
+                    CastSafety::Safe
+                }
+            },
 
-            if dest_size < src_size {
-                return CastSafety::Lossy;
-            }
+            (t1, t2) if t1.is_float() && t2.is_float() => {
+                if t1.size_in_bytes() > t2.size_in_bytes() {
+                    CastSafety::Lossy
+                } else {
+                    CastSafety::Safe
+                }
+            },
 
-            return CastSafety::Safe;
+            (t1, t2) if t1.is_float() && t2.is_integer() => CastSafety::FloatToInt,
+            (t1, t2) if t1.is_integer() && t2.is_float() => CastSafety::IntToFloat,
+
+            (Pointer(_), t2) if t2.is_integer() => {
+                if t2.size_in_bytes() < 8 { CastSafety::Lossy } else { CastSafety::PointerToInt }
+            },
+            (t1, Pointer(_)) if t1.is_integer() => CastSafety::IntToPointer,
+
+            (Pointer(_), Pointer(_)) => CastSafety::PointerCast,
+
+            (Enum(_), t2) if t2.is_integer() => CastSafety::Safe,
+            (t1, Enum(_)) if t1.is_integer() => CastSafety::SignMismatch,
+
+            _ => CastSafety::Forbidden
         }
-
-        CastSafety::Forbidden
-    }
-
-    pub fn is_void(&self) -> bool {
-        matches!(self, Type::Void)
     }
 }
 
@@ -129,10 +255,19 @@ pub enum SizeOfTarget {
 pub type ExprNode = Node<Expr>;
 pub type StmtNode = Node<Stmt>;
 
+impl ExprNode {
+    pub fn is_lvalue(&self) -> bool {
+        matches!(self.kind,
+        Expr::Identifier(_) | Expr::Index{..} | Expr::MemberAccess{..} |
+        Expr::Unary{op: UnaryOp::Deref, ..})
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     LiteralInt(u64),
     LiteralFloat(f64),
+    LiteralChar(u8),
     LiteralString(String),
     LiteralBool(bool),
     Null,

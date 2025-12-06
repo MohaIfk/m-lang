@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::ast::*;
 use crate::error::{CompilerError, Span};
 use crate::symbols::*;
@@ -38,25 +39,61 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        match value.check_cast_safety(target) {
-            CastSafety::Safe => {},
-            CastSafety::Lossy => {
-                self.creat_compiler_warning(
-                    format!("Implicit narrowing: {:?} fits into {:?}, but data loss is possible. Use 'as'.", value, target),
-                    span
-                );
-            },
-            CastSafety::SignMismatch => {
-                self.creat_compiler_warning(
-                    format!("Sign mismatch: {:?} -> {:?}. Values like -1 will become huge.", value, target),
-                    span
-                );
-            },
-            CastSafety::Forbidden => {
+        if let Type::UntypedInt(v) = value {
+            if value.try_unify_literal(target) {
+                return;
+            } else {
                 self.creat_compiler_error(
-                    format!("Type Mismatch: Cannot assign {:?} to {:?}", value, target),
+                    format!("Literal {} does not fit into type {:?}", v, target),
                     span
                 );
+                return;
+            }
+        }
+
+        if let Type::UntypedFloat(v) = value {
+            if value.try_unify_literal(target) {
+                return;
+            } else {
+                self.creat_compiler_error(
+                    format!("Float literal {} does not fit into type {:?}", v, target),
+                    span
+                );
+            }
+        }
+
+        if !target.can_assign_from(value) {
+            match value.check_cast_safety(target) {
+                CastSafety::Safe => {
+                    self.creat_compiler_warning(
+                        format!("Implicit widening {:?} -> {:?}. This is safe, but explicit cast recommended.", value, target),
+                        span,
+                    );
+                },
+                CastSafety::Lossy | CastSafety::FloatToInt | CastSafety::IntToFloat => {
+                    self.creat_compiler_error(
+                        format!("Possible data loss! {:?} does not fit into {:?}. Use 'as' if this is intentional.", value, target),
+                        span
+                    );
+                },
+                CastSafety::SignMismatch => {
+                    self.creat_compiler_error(
+                        format!("Sign mismatch! {:?} -> {:?}. Assigning signed to unsigned (or vice versa) requires explicit cast.", value, target),
+                        span
+                    );
+                },
+                CastSafety::PointerCast | CastSafety::IntToPointer | CastSafety::PointerToInt => {
+                    self.creat_compiler_error(
+                        format!("Pointer type mismatch {:?} -> {:?}. Use explicit 'as' cast for pointer manipulation.", value, target),
+                        span
+                    );
+                },
+                CastSafety::Forbidden => {
+                    self.creat_compiler_error(
+                        format!("Type Mismatch: Cannot convert {:?} to {:?}", value, target),
+                        span
+                    );
+                }
             }
         }
     }
@@ -148,7 +185,10 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 let target_ty = target.ty.as_ref().unwrap();
                 self.visit_expr(value);
                 let value_ty = value.ty.as_ref().unwrap();
-                self.check_assignment(target_ty, value_ty, target.span);
+                if target_ty.can_assign_from(value_ty) {
+                    return;
+                }
+                self.check_assignment(target_ty, value_ty, value.span);
             },
             Stmt::If { condition, then_branch, else_branch } => {
                 self.visit_expr(condition);
@@ -175,8 +215,12 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 if let Some(stmt_init) = init {
                     self.visit_stmt(stmt_init);
                 }
-                if let Some(stmt_condition) = condition {
-                    self.visit_expr(stmt_condition);
+                if let Some(expr_condition) = condition {
+                    self.visit_expr(expr_condition);
+                    let condition_ty = expr_condition.ty.as_ref().unwrap();
+                    if !self.is_truthy(condition_ty) {
+                        self.creat_compiler_error(format!("Condition must be a boolean or numeric, found {:?}", condition_ty), expr_condition.span);
+                    }
                 }
                 if let Some(stmt_update) = update {
                     self.visit_stmt(stmt_update);
@@ -194,8 +238,8 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                     return_ty = &Type::Void;
                 }
                 self.check_assignment(&target_ty, return_ty, stmt.span);
-            }
-            _ => {}
+            },
+            Stmt::Break | Stmt::Continue => {}
         }
     }
 
@@ -207,8 +251,39 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 let left_ty = lhs.ty.as_ref().unwrap();
                 let right_ty = rhs.ty.as_ref().unwrap();
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => expr.ty = {
-                        if left_ty.is_numeric() && right_ty.is_numeric() {
+                    BinaryOp::Add | BinaryOp::Sub => expr.ty = {
+                        match (left_ty, right_ty) {
+                            (concrete, Type::UntypedInt(val)) | (Type::UntypedInt(val), concrete)
+                            if concrete.is_integer() => {
+                                if Type::UntypedInt(*val).try_unify_literal(concrete) {
+                                    Some(concrete.clone())
+                                } else {
+                                    self.creat_compiler_error(
+                                        format!("Literal {} does not fit into type {:?}", val, concrete),
+                                        expr.span
+                                    );
+                                    Some(Type::Error)
+                                }
+                            },
+                            (Type::UntypedInt(lval), Type::UntypedInt(rval)) => {
+                                let r = match op {
+                                    BinaryOp::Add => lval + rval,
+                                    BinaryOp::Sub => lval - rval,
+                                    _ => unreachable!()
+                                };
+                                Some(Type::UntypedInt(r))
+                            },
+                            (t1, t2) if t1 == t2 && t1.is_numeric() => Some(t1.clone()),
+                            (Type::Pointer(inner), t2) if t2.is_integer() => Some(Type::Pointer(inner.clone())),
+                            (Type::Pointer(t1), Type::Pointer(t2)) if t1 == t2 && matches!(op, BinaryOp::Sub) => Some(Type::U64),
+                            _ => {
+                                self.creat_compiler_error(format!("Invalid binary op {:?} between {:?} and {:?}", op, left_ty, right_ty), expr.span);
+                                Some(Type::Error)
+                            }
+                        }
+                    },
+                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => expr.ty = {
+                        if left_ty == right_ty && left_ty.is_numeric() {
                             Some(left_ty.clone())
                         } else {
                             self.creat_compiler_error(format!("Type Mismatch in binary op between: {:?} and {:?}", left_ty, right_ty), expr.span);
@@ -260,31 +335,19 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                     }
                     UnaryOp::AddressOf => {
                         self.visit_expr(rhs);
+                        if !rhs.is_lvalue() {
+                            self.creat_compiler_error("Cannot take address of temporary value".into(), expr.span);
+                        }
                         let rhs_ty = rhs.ty.as_ref().unwrap();
                         Some(Type::Pointer(Box::new(rhs_ty.clone())))
                     }
                 }
             },
             Expr::LiteralInt(n) => expr.ty = {
-                if *n < i8::MAX as u64 {
-                    Some(Type::I8)
-                } else if *n < u8::MAX as u64 {
-                    Some(Type::U8)
-                } else if *n < i16::MAX as u64 {
-                    Some(Type::I16)
-                } else if *n < u16::MAX as u64 {
-                    Some(Type::U16)
-                } else if *n < i32::MAX as u64 {
-                    Some(Type::I32)
-                } else if *n < u32::MAX as u64 {
-                    Some(Type::U32)
-                } else if *n < i64::MAX as u64 {
-                    Some(Type::I64)
-                } else {
-                    Some(Type::U64)
-                }
+                Some(Type::UntypedInt(*n as i128))
             },
-            Expr::LiteralFloat(_) => expr.ty = Some(Type::F64),
+            Expr::LiteralFloat(_) => expr.ty = Some(Type::F32),
+            Expr::LiteralChar(_) => expr.ty = Some(Type::CHAR),
             Expr::LiteralBool(_) => expr.ty = Some(Type::BOOL),
             Expr::LiteralString(_) => expr.ty = Some(Type::Pointer(Box::new(Type::CHAR))),
             Expr::Identifier(name) => {
@@ -318,7 +381,7 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 let struct_name = if *is_arrow {
                     match object_ty {
                         Type::Pointer(inner_ty) => match *inner_ty {
-                            Type::Struct(name) | Type::Named(name) => name.clone(),
+                            Type::Struct(name) => name.clone(),
                             _ => {
                                 self.creat_compiler_error(format!("Type '{:?}' is not a pointer to a struct, cannot use '->'", inner_ty), object.span);
                                 expr.ty = Some(Type::Error);
@@ -333,7 +396,7 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                     }
                 } else {
                     match object_ty {
-                        Type::Struct(ref name) | Type::Named(ref name) => name.clone(),
+                        Type::Struct(ref name) => name.clone(),
                         Type::Pointer(_) => {
                             self.creat_compiler_error(
                                 "Cannot access members of a pointer to a struct, use '->' instead of '.'".into(),
@@ -377,24 +440,54 @@ impl<'a> ASTVisitor<()> for TypeChecker<'a> {
                 let callee_ty = callee.ty.as_ref().unwrap();
                 if let Type::Fn {params, ret} = callee_ty {
                     if args.len() != params.len() {
-                        expr.ty = Some(Type::Error);
-                        self.creat_compiler_error(format!("Wrong number of arguments: {}", params.len()), expr.span);
+                        self.creat_compiler_error(format!("Expected {} args, found {}", params.len(), args.len()), expr.span);
                     }
-                    for arg in args {
-                        self.visit_expr(arg);
+
+                    let limit = std::cmp::min(args.len(), params.len());
+
+                    for i in 0..limit {
+                        self.visit_expr(&mut args[i]);
+                        let arg_ty = args[i].ty.as_ref().unwrap();
+                        let param_ty = &params[i];
+                        self.check_assignment(param_ty, arg_ty, args[i].span);
+                    }
+
+                    for i in limit..args.len() {
+                        self.visit_expr(&mut args[i]);
                     }
                     expr.ty = Some(*ret.clone());
                 } else {
                     expr.ty = Some(Type::Error);
-                    self.creat_compiler_error(format!("Tied to call a no function type: {:?}", callee_ty), expr.span);
+                    self.creat_compiler_error(format!("Type {:?} is not callable", callee_ty), expr.span);
                 }
             },
-            Expr::StructInit {name, fields} => {
-                expr.ty = Some(Type::Struct(name.clone()));
+            Expr::StructInit {name: struct_name, fields } => {
+                let mut struct_fields: HashMap<String, Type> = HashMap::new();
+                if let Some(TypeInfo::Struct{fields: _fields, ..}) = self.type_registry.get_type(&struct_name) {
+                    for (_f_name, _f_ty) in _fields {
+                        struct_fields.insert(_f_name, _f_ty);
+                    }
+                }
+                for (f_name, f_expr) in fields {
+                    self.visit_expr(f_expr);
+                    let f_expr_ty = f_expr.ty.as_ref().unwrap();
+                    match struct_fields.get(f_name) {
+                        Some(f_target_type) => {
+                            if !f_target_type.can_assign_from(f_expr_ty) {
+                                self.creat_compiler_error(
+                                    format!("Type Mismatch: Cannot convert {:?} to {:?}", f_expr_ty, f_target_type),
+                                    f_expr.span
+                                );
+                            }
+                        },
+                        None => {
+                            self.creat_compiler_error(format!("Struct '{}' has no field named '{}'", struct_name, f_name), f_expr.span);
+                            f_expr.ty = Some(Type::Error);
+                        }
+                    }
+                }
+                expr.ty = Some(Type::Struct(struct_name.clone()));
             },
-            _ => {
-                expr.ty = Some(Type::Error);
-            }
         }
     }
 }
