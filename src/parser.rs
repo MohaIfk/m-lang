@@ -183,6 +183,8 @@ impl<'a> Parser<'a> {
                 TokenType::I64 => Ok(TypeSpec::I64),
                 TokenType::F32 => Ok(TypeSpec::F32),
                 TokenType::F64 => Ok(TypeSpec::F64),
+                TokenType::Usize => Ok(TypeSpec::Usize),
+                TokenType::Isize => Ok(TypeSpec::Isize),
                 TokenType::CHAR => Ok(TypeSpec::CHAR),
                 TokenType::Void => Ok(TypeSpec::Void),
                 TokenType::BOOL => Ok(TypeSpec::BOOL),

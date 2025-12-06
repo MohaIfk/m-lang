@@ -7,11 +7,11 @@
 ### Tokens
 
 | **Category**      | **Token Rules / Patterns**                                                                                                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ----------------- |----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Comments**      | Line: `//...`<br><br>  <br><br>Block: `/* ... */` (Non-nested)                                                                                                                         |
 | **Whitespace**    | Space, Tab, Newline, CR (Skipped)                                                                                                                                                      |
 | **Keywords**      | `fn` `struct` `enum` `let` `var` `const` `import` `extern`<br><br>  <br><br>`if` `else` `while` `for` `return` `break` `continue`<br><br>  <br><br>`null` `sizeof` `as` `true` `false` |
-| **Types**         | `void` `bool` `char`<br><br>  <br><br>`i8` `i16` `i32` `i64`<br><br>  <br><br>`u8` `u16` `u32` `u64`<br><br>  <br><br>`f32` `f64`                                                      |
+| **Types**         | `void` `bool` `char`<br><br>  <br><br>`i8` `i16` `i32` `i64`<br><br>  <br><br>`u8` `u16` `u32` `u64`<br><br>  <br><br> `usize` `isize` `f32` `f64`                                     |
 | **Int Literal**   | Dec: `[0-9]+(_[0-9]+)*`<br><br>  <br><br>Hex: `0x[0-9a-fA-F_]+`<br><br>  <br><br>Bin: `0b[01_]+`                                                                                       |
 | **Float Literal** | `[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?`                                                                                                                                                     |
 | **String/Char**   | `"`...`"` and `'`...`'` (Allow escapes: `\n`, `\t`, `\r`, `\\`, `\"`, `\'`)                                                                                                            |
@@ -53,6 +53,7 @@ type_list ::= type { "," type } ;
 
 primitive_type ::= "i8" | "i16" | "i32" | "i64"
                  | "u8" | "u16" | "u32" | "u64"
+                 | "usize" | "isize"
                  | "f32" | "f64"
                  | "bool" | "char" | "void" ;
 ```

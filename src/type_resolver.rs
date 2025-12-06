@@ -23,6 +23,8 @@ impl TypeResolver {
             TypeSpec::U16 => Ok(Type::U16),
             TypeSpec::U32 => Ok(Type::U32),
             TypeSpec::U64 => Ok(Type::U64),
+            TypeSpec::Usize => Ok(Type::Usize),
+            TypeSpec::Isize => Ok(Type::Isize),
             TypeSpec::Void => Ok(Type::Void),
             TypeSpec::Named(name) => Ok(Type::Struct(name.clone())),
             TypeSpec::Pointer(inner) => {

@@ -70,6 +70,7 @@ pub enum TokenType {
     F32, F64, BOOL, CHAR, // Primitive types
     I8, I16, I32, I64,
     U8, U16, U32, U64,
+    Usize, Isize,
 
     EOF // End of File
 }
@@ -128,6 +129,8 @@ pub fn get_keywork_hash_map() -> HashMap<&'static str, TokenType> {
         ("u16",      TokenType::U16),
         ("u32",      TokenType::U32),
         ("u64",      TokenType::U64),
+        ("usize",      TokenType::Usize),
+        ("isize",      TokenType::Isize),
         ("f32",      TokenType::F32),
         ("f64",      TokenType::F64),
         ("bool",     TokenType::BOOL),

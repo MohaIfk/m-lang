@@ -1,4 +1,3 @@
-use crate::ast::Type::F64;
 use crate::error::Span;
 use crate::symbols::ScopeId;
 
@@ -21,6 +20,7 @@ pub enum TypeSpec {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
     U8, U16, U32, U64,
+    Usize, Isize,
     Void,
     Named(String),
     Pointer(Box<TypeSpec>),
@@ -34,6 +34,7 @@ pub enum Type {
     F32, F64, BOOL, CHAR,
     I8, I16, I32, I64,
     U8, U16, U32, U64,
+    Usize, Isize,
     UntypedInt(i128),
     UntypedFloat(f64),
     Struct(String),
@@ -65,7 +66,7 @@ impl Type {
             U16 | I16 => 2,
             U32 | I32 | F32 => 4,
             U64 | I64 | F64 => 8,
-            Pointer(_) | Fn { .. } => 8,
+            Usize | Isize | Pointer(_) | Fn { .. } => 8,
             Array(ty, len) => ty.size_in_bytes() * (*len as usize),
             Void => 0,
             Struct(_) | Enum(_) => 0,
@@ -88,6 +89,8 @@ impl Type {
             Type::U16 => u16::MIN as i128,
             Type::U32 => u32::MIN as i128,
             Type::U64 => u64::MIN as i128,
+            Type::Usize => usize::MIN as i128,
+            Type::Isize => isize::MIN as i128,
             Type::UntypedInt(_) => unreachable!(),
             Type::UntypedFloat(_) => unreachable!(),
             Type::Struct(_) => unreachable!(),
@@ -114,6 +117,8 @@ impl Type {
             Type::U16 => u16::MAX as i128,
             Type::U32 => u32::MAX as i128,
             Type::U64 => u64::MAX as i128,
+            Type::Usize => usize::MAX as i128,
+            Type::Isize => isize::MAX as i128,
             Type::UntypedInt(_) => unreachable!(),
             Type::UntypedFloat(_) => unreachable!(),
             Type::Struct(_) => unreachable!(),
@@ -132,17 +137,17 @@ impl Type {
 
     pub fn is_integer(&self) -> bool {
         use Type::*;
-        matches!(self, I8|I16|I32|I64|U8|U16|U32|U64)
+        matches!(self, I8|I16|I32|I64|U8|U16|U32|U64|Usize|Isize)
     }
 
     pub fn is_signed_int(&self) -> bool {
         use Type::*;
-        matches!(self, I8|I16|I32|I64)
+        matches!(self, I8|I16|I32|I64|Isize)
     }
 
     pub fn is_unsigned_int(&self) -> bool {
         use Type::*;
-        matches!(self, U8|U16|U32|U64)
+        matches!(self, U8|U16|U32|U64|Usize)
     }
 
     pub fn is_float(&self) -> bool {
@@ -166,7 +171,7 @@ impl Type {
                 let max = t.max_value();
                 *val >= min && *val <= max
             },
-            (Type::UntypedFloat(val), t) if t.is_float() => true,
+            (Type::UntypedFloat(_), t) if t.is_float() => true,
             (Type::UntypedInt(0), t) if t.is_pointer() => true, // We allow 0 to be a null pointer
             _ => false
         }
